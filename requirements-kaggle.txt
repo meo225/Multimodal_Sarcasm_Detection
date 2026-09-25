@@ -1,0 +1,4 @@
+# Kaggle/Colab đã có sẵn torch, torchvision, transformers, scikit-learn, pandas,
+# matplotlib, pyyaml, pillow, tqdm. Không cài lại torch để tránh lệch phiên bản CUDA.
+underthesea
+emoji

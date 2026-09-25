@@ -1,0 +1,15 @@
+torch
+torchvision
+transformers>=4.45
+underthesea          # tách từ tiếng Việt cho PhoBERT
+emoji                # xử lý emoji trong caption
+scikit-learn         # metrics
+pyyaml               # đọc config
+pandas
+matplotlib
+pillow
+tqdm
+paddleocr            # Tuần 7
+paddlepaddle         # backend cho paddleocr (Tuần 7)
+kaggle               # download data qua API (chỉ dùng local)
+pytest

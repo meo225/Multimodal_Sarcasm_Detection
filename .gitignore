@@ -1,0 +1,24 @@
+# data & checkpoint không commit (xem CODEBASE.md mục 5)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+outputs/
+*.pt
+*.pth
+*.ckpt
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# notebook
+.ipynb_checkpoints/
+
+# secrets
+kaggle.json
+.env

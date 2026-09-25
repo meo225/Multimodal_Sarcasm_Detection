@@ -1,0 +1,70 @@
+# Config gốc, các config thí nghiệm kế thừa bằng `inherit: base.yaml` và chỉ ghi đè phần khác.
+seed: 42
+
+# Đường dẫn theo môi trường, utils/config.py tự chọn nhánh ứng với môi trường đang chạy.
+paths:
+  local:
+    data_dir: data/raw
+    output_dir: outputs
+    cache_dir: data/processed
+  kaggle:
+    data_dir: /kaggle/input/datasets/hhhoang/vimmsd-dataset   # đã xác nhận bằng notebooks/00_dataset_check.ipynb
+    output_dir: /kaggle/working/outputs
+    cache_dir: /kaggle/working/cache
+  colab:
+    data_dir: /content/drive/MyDrive/IE403/data/raw
+    output_dir: /content/drive/MyDrive/IE403/outputs
+    cache_dir: /content/drive/MyDrive/IE403/cache
+
+data:
+  # đường dẫn tương đối với paths.data_dir; kiểm tra lại tên file/thư mục sau khi tải ViMMSD
+  train_json: vimmsd-train.json
+  train_image_dir: training-images/train-images
+  public_test_json: vimmsd-public-test.json      # không có nhãn, chỉ dùng để xuất dự đoán
+  public_test_image_dir: public-test-images/dev-images
+  labels: [not-sarcasm, text-sarcasm, image-sarcasm, multi-sarcasm]
+  val_ratio: 0.1     # val/test chia stratified từ tập train có nhãn
+  test_ratio: 0.1
+  max_length: 128
+  text:
+    lowercase: false
+    normalize_teencode: true
+    emoji: demojize   # keep | remove | demojize
+    word_segment: true
+  image_augment: false
+  sampler: random     # random | weighted (oversampling lớp hiếm)
+  use_ocr: false
+  ocr_cache: ocr.json # nằm trong paths.cache_dir
+
+model:
+  modality: concat    # text | image | concat | cross_attn
+  text_encoder:
+    name: vinai/phobert-base
+    freeze: false
+  image_encoder:
+    name: openai/clip-vit-base-patch32
+    freeze: true
+  fusion: {}
+  head_hidden: 512
+  dropout: 0.2
+
+loss:
+  name: ce            # ce | focal
+  class_weight: null  # null | inverse | sqrt_inverse | effective
+  gamma: 2.0          # chỉ dùng cho focal
+  label_smoothing: 0.0
+
+train:
+  epochs: 10
+  batch_size: 16
+  eval_batch_size: 64
+  grad_accum: 1
+  lr_encoder: 2.0e-5
+  lr_head: 1.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  amp: true
+  num_workers: 2
+  early_stop_patience: 3
+  resume_from: null   # file .pt hoặc thư mục chứa last.pt

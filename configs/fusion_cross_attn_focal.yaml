@@ -1,0 +1,5 @@
+inherit: fusion_cross_attn.yaml
+loss:
+  name: focal
+  gamma: 2.0
+  class_weight: effective

@@ -1,0 +1,7 @@
+inherit: base.yaml
+model:
+  modality: image
+  image_encoder:
+    freeze: false   # chỉ có ảnh nên fine-tune luôn encoder, không chỉ linear probe
+train:
+  lr_encoder: 1.0e-5

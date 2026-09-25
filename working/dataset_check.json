@@ -1,0 +1,231 @@
+{
+  "data_dir": "/kaggle/input/datasets/hhhoang/vimmsd-dataset",
+  "sizes": {
+    "train": 10805,
+    "public_test": 1413,
+    "private_test": 1504
+  },
+  "label_counts": {
+    "not-sarcasm": 6062,
+    "text-sarcasm": 77,
+    "image-sarcasm": 442,
+    "multi-sarcasm": 4224
+  },
+  "checks": [
+    {
+      "kiểm tra": "có file vimmsd-train.json",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "train: mọi mẫu có đủ image/caption/label",
+      "kết quả": "OK",
+      "chi tiết": "{('caption', 'image', 'label'): 10805}"
+    },
+    {
+      "kiểm tra": "có file vimmsd-public-test.json",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "public_test: mọi mẫu có đủ image/caption/label",
+      "kết quả": "OK",
+      "chi tiết": "{('caption', 'image', 'label'): 1413}"
+    },
+    {
+      "kiểm tra": "có file vimmsd-private-test.json",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "private_test: mọi mẫu có đủ image/caption/label",
+      "kết quả": "OK",
+      "chi tiết": "{('caption', 'image', 'label'): 1504}"
+    },
+    {
+      "kiểm tra": "train: id không trùng",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "train: không có nhãn rỗng",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu rỗng"
+    },
+    {
+      "kiểm tra": "train: nhãn thuộc 4 lớp đã biết",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "public_test: không có nhãn (label = null)",
+      "kết quả": "OK",
+      "chi tiết": "{None: 1413}"
+    },
+    {
+      "kiểm tra": "private_test: không có nhãn (label = null)",
+      "kết quả": "OK",
+      "chi tiết": "{None: 1504}"
+    },
+    {
+      "kiểm tra": "train: caption là chuỗi",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu không phải chuỗi"
+    },
+    {
+      "kiểm tra": "train: không có caption rỗng",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu rỗng"
+    },
+    {
+      "kiểm tra": "public_test: caption là chuỗi",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu không phải chuỗi"
+    },
+    {
+      "kiểm tra": "public_test: không có caption rỗng",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu rỗng"
+    },
+    {
+      "kiểm tra": "private_test: caption là chuỗi",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu không phải chuỗi"
+    },
+    {
+      "kiểm tra": "private_test: không có caption rỗng",
+      "kết quả": "OK",
+      "chi tiết": "0 mẫu rỗng"
+    },
+    {
+      "kiểm tra": "train: có thư mục training-images/train-images",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "train: mọi ảnh trong JSON đều có file",
+      "kết quả": "OK",
+      "chi tiết": "thiếu 0/10805"
+    },
+    {
+      "kiểm tra": "train: không có file ảnh thừa",
+      "kết quả": "OK",
+      "chi tiết": "0 file không có trong JSON"
+    },
+    {
+      "kiểm tra": "train: mỗi ảnh chỉ thuộc 1 mẫu",
+      "kết quả": "OK",
+      "chi tiết": "0 tên ảnh lặp"
+    },
+    {
+      "kiểm tra": "public_test: có thư mục public-test-images/dev-images",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "public_test: mọi ảnh trong JSON đều có file",
+      "kết quả": "OK",
+      "chi tiết": "thiếu 0/1413"
+    },
+    {
+      "kiểm tra": "public_test: không có file ảnh thừa",
+      "kết quả": "OK",
+      "chi tiết": "0 file không có trong JSON"
+    },
+    {
+      "kiểm tra": "public_test: mỗi ảnh chỉ thuộc 1 mẫu",
+      "kết quả": "OK",
+      "chi tiết": "0 tên ảnh lặp"
+    },
+    {
+      "kiểm tra": "private_test: có thư mục private-test-images/test-images",
+      "kết quả": "OK",
+      "chi tiết": ""
+    },
+    {
+      "kiểm tra": "private_test: mọi ảnh trong JSON đều có file",
+      "kết quả": "OK",
+      "chi tiết": "thiếu 0/1504"
+    },
+    {
+      "kiểm tra": "private_test: không có file ảnh thừa",
+      "kết quả": "OK",
+      "chi tiết": "0 file không có trong JSON"
+    },
+    {
+      "kiểm tra": "private_test: mỗi ảnh chỉ thuộc 1 mẫu",
+      "kết quả": "OK",
+      "chi tiết": "0 tên ảnh lặp"
+    },
+    {
+      "kiểm tra": "không trùng tên ảnh giữa train và public_test",
+      "kết quả": "OK",
+      "chi tiết": "0 ảnh"
+    },
+    {
+      "kiểm tra": "không trùng tên ảnh giữa train và private_test",
+      "kết quả": "OK",
+      "chi tiết": "0 ảnh"
+    },
+    {
+      "kiểm tra": "không trùng tên ảnh giữa public_test và private_test",
+      "kết quả": "OK",
+      "chi tiết": "0 ảnh"
+    },
+    {
+      "kiểm tra": "mọi lớp có >= 50 mẫu",
+      "kết quả": "OK",
+      "chi tiết": "ít nhất: text-sarcasm = 77"
+    },
+    {
+      "kiểm tra": "caption không chứa HTML entity",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "271 caption, cần html.unescape: {'&amp;': 260, '&gt;': 80, '&lt;': 37}"
+    },
+    {
+      "kiểm tra": "caption đã chuẩn Unicode NFC",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "72 caption"
+    },
+    {
+      "kiểm tra": "train: không có caption trùng",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "2860 mẫu (26.5%) thuộc 697 nhóm caption trùng"
+    },
+    {
+      "kiểm tra": "train: caption trùng có cùng nhãn",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "123 nhóm có nhãn khác nhau"
+    },
+    {
+      "kiểm tra": "mọi ảnh mở được",
+      "kết quả": "OK",
+      "chi tiết": "0 ảnh lỗi"
+    },
+    {
+      "kiểm tra": "đuôi file khớp định dạng thật",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "1265 ảnh, ví dụ: {'PNG': 1265}"
+    },
+    {
+      "kiểm tra": "không có ảnh động nhiều frame",
+      "kết quả": "OK",
+      "chi tiết": "0 ảnh"
+    },
+    {
+      "kiểm tra": "không có ảnh quá nhỏ (< 100px)",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "7 ảnh"
+    },
+    {
+      "kiểm tra": "không có ảnh tỉ lệ cực đoan (> 3:1)",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "72 ảnh, CLIP center crop sẽ cắt mất phần lớn ảnh"
+    },
+    {
+      "kiểm tra": "không có ảnh trùng nội dung (md5)",
+      "kết quả": "CHÚ Ý",
+      "chi tiết": "84 file thuộc 42 nhóm"
+    }
+  ]
+}
