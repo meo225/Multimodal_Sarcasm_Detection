@@ -157,7 +157,7 @@ Bản gốc nằm trong `notebooks/00_template.ipynb` (cell 2). Tạo notebook m
 import os, subprocess, sys
 from pathlib import Path
 
-REPO = "github.com/<team>/IE403.git"   # TODO: sửa thành repo của nhóm
+REPO = "github.com/yunaLee21/Multimodal_Sarcasm_Detection.git"
 REF = "main"               # branch của mình, hoặc 1 commit hash để tái lặp kết quả
 CODE_DIR = "/tmp/IE403"    # clone ra ngoài /kaggle/working để token không bị lưu vào output
 
@@ -301,7 +301,7 @@ Không cần môi trường ảo phức tạp. Kaggle/Colab cài qua cell bootst
 
 Khung code ở mục 2 đã có đủ (trừ `PLAN.md`). Việc cần làm để chạy thật:
 
-1. `git init`, push lên GitHub, sửa `REPO` trong cell bootstrap của các notebook (`<team>`).
+1. ~~`git init`, push lên GitHub, sửa `REPO` trong cell bootstrap~~ (đã xong: repo public [yunaLee21/Multimodal_Sarcasm_Detection](https://github.com/yunaLee21/Multimodal_Sarcasm_Detection), không cần `GITHUB_TOKEN`).
 2. Chạy `notebooks/00_dataset_check.ipynb` trên Kaggle (attach `hhhoang/vimmsd-dataset`), đối chiếu đường dẫn nó in ra với `paths.kaggle.data_dir` trong `configs/base.yaml`.
 3. Xử lý các điểm "CHÚ Ý" trong bảng tổng kết của notebook (tiền xử lý caption, cách chia val/test).
 4. Chạy `notebooks/00_template.ipynb` trên Kaggle để chắc chắn clone + import `vimmsd` + đọc dữ liệu hoạt động, rồi chạy `01_eda.ipynb`.
