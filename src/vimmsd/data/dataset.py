@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from vimmsd.data.augmentation import build_image_augment
+from vimmsd.data.image_text import compose_image_text, image_key
 from vimmsd.data.preprocessing import TextPreprocessor
 
 logger = logging.getLogger(__name__)
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 IGNORE_LABEL = -1  # mẫu không có nhãn (public test)
 
 
-def load_records(json_path, image_dir, label2id, ocr_texts=None):
+def load_records(json_path, image_dir, label2id, image_texts=None):
     """Đọc file annotation ViMMSD: {id: {"image", "caption", "label"}} (hoặc list các dict).
-    Trả về list dict thống nhất: id, image_path, caption, label (int, -1 nếu không có nhãn)."""
+    Trả về list dict thống nhất: id, image_path, caption, label (int, -1 nếu không có nhãn).
+    image_texts: {"ocr": cache, "description": cache} tạo bởi scripts/extract_image_text.py."""
     with open(json_path, encoding="utf-8") as f:
         raw = json.load(f)
     items = raw.items() if isinstance(raw, dict) else ((str(i), r) for i, r in enumerate(raw))
@@ -32,15 +34,10 @@ def load_records(json_path, image_dir, label2id, ocr_texts=None):
             "caption": r.get("caption", ""),
             "label": label2id[label] if label is not None else IGNORE_LABEL,
         }
-        if ocr_texts is not None:
-            rec["ocr"] = ocr_texts.get(ocr_key(image_dir, r["image"]), "")
+        for field, cache in (image_texts or {}).items():
+            rec[field] = cache.get(image_key(image_dir, r["image"]), "")
         records.append(rec)
     return records
-
-
-def ocr_key(image_dir, image_name):
-    # key không phụ thuộc đường dẫn tuyệt đối, để cache OCR tạo trên Kaggle dùng được ở local/Colab
-    return f"{Path(image_dir).name}/{image_name}"
 
 
 def split_records(records, val_ratio, test_ratio, seed):
@@ -60,21 +57,19 @@ def split_records(records, val_ratio, test_ratio, seed):
 
 class ViMMSDDataset(Dataset):
     def __init__(self, records, text_preprocessor=None, image_transform=None,
-                 load_image=True, cache_dir=None, use_ocr=False):
+                 load_image=True, cache_dir=None, use_image_text=False):
         self.records = records
         self.image_transform = image_transform
         self.load_image = load_image
-        self.use_ocr = use_ocr
 
         captions = [r["caption"] for r in records]
+        image_texts = [compose_image_text(r.get("ocr", ""), r.get("description", "")) for r in records]
         if text_preprocessor is not None:
             captions = text_preprocessor.process_all(captions, cache_dir=cache_dir)
-            if use_ocr:
-                ocr = text_preprocessor.process_all([r.get("ocr", "") for r in records], cache_dir=cache_dir)
-        elif use_ocr:
-            ocr = [r.get("ocr", "") for r in records]
+            if use_image_text:
+                image_texts = text_preprocessor.process_all(image_texts, cache_dir=cache_dir)
         self.texts = captions
-        self.ocr_texts = ocr if use_ocr else None
+        self.image_texts = image_texts if use_image_text else None
         self._bad_images = 0
 
     def __len__(self):
@@ -98,8 +93,8 @@ class ViMMSDDataset(Dataset):
     def __getitem__(self, idx):
         rec = self.records[idx]
         item = {"id": rec["id"], "text": self.texts[idx], "label": rec["label"]}
-        if self.ocr_texts is not None:
-            item["ocr"] = self.ocr_texts[idx]
+        if self.image_texts is not None:
+            item["image_text"] = self.image_texts[idx]
         if self.load_image:
             img = self._open_image(rec["image_path"])
             if self.image_transform is not None:
@@ -123,9 +118,9 @@ class ViMMSDCollator:
         }
         if self.tokenizer is not None:
             texts = [it["text"] for it in items]
-            if "ocr" in items[0]:
-                # caption và OCR là 2 segment: <s> caption </s></s> ocr </s>
-                enc = self.tokenizer(texts, [it["ocr"] for it in items], padding=True,
+            if "image_text" in items[0]:
+                # 2 segment: <s> caption </s></s> chữ trong ảnh + mô tả ảnh </s>
+                enc = self.tokenizer(texts, [it["image_text"] for it in items], padding=True,
                                      truncation="longest_first", max_length=self.max_length,
                                      return_tensors="pt")
             else:
@@ -139,22 +134,33 @@ class ViMMSDCollator:
         return batch
 
 
-def load_ocr_texts(cfg):
-    if not cfg.data.get("use_ocr"):
-        return None
-    path = Path(cfg.paths.cache_dir) / cfg.data.ocr_cache
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+def load_image_texts(cfg):
+    """Đọc cache OCR / mô tả VLM theo `data.image_text` trong config. Trả về {} nếu không dùng."""
+    it_cfg = cfg.data.get("image_text") or {}
+    cache_dir = Path(it_cfg.get("dir") or cfg.paths.cache_dir)
+    texts = {}
+    for field, flag, name in (("ocr", "use_ocr", "ocr_cache"), ("description", "use_description", "description_cache")):
+        if it_cfg.get(flag):
+            path = cache_dir / it_cfg[name]
+            if not path.exists():
+                raise FileNotFoundError(f"thiếu {path}: chạy scripts/extract_image_text.py (notebooks/01b) trước")
+            texts[field] = json.loads(path.read_text(encoding="utf-8"))
+    return texts
+
+
+def uses_image_text(cfg):
+    it_cfg = cfg.data.get("image_text") or {}
+    return bool(it_cfg.get("use_ocr") or it_cfg.get("use_description"))
 
 
 def load_all_records(cfg):
     """Trả về dict split -> records: train/val/test (chia từ tập có nhãn) và public_test (không nhãn)."""
     data_dir = Path(cfg.paths.data_dir)
     label2id = {l: i for i, l in enumerate(cfg.data.labels)}
-    ocr_texts = load_ocr_texts(cfg)
+    image_texts = load_image_texts(cfg)
 
     labeled = load_records(data_dir / cfg.data.train_json, data_dir / cfg.data.train_image_dir,
-                           label2id, ocr_texts)
+                           label2id, image_texts)
     train, val, test = split_records(labeled, cfg.data.val_ratio, cfg.data.test_ratio, cfg.seed)
     splits = {"train": train, "val": val, "test": test}
 
@@ -162,7 +168,7 @@ def load_all_records(cfg):
     if public_json and (data_dir / public_json).exists():
         splits["public_test"] = load_records(data_dir / public_json,
                                              data_dir / cfg.data.public_test_image_dir,
-                                             label2id, ocr_texts)
+                                             label2id, image_texts)
     return splits
 
 
@@ -180,7 +186,7 @@ def build_datasets(cfg, needs_text=True, needs_image=True, splits=("train", "val
             image_transform=augment,
             load_image=needs_image,
             cache_dir=cfg.paths.get("cache_dir"),
-            use_ocr=bool(cfg.data.get("use_ocr")) and needs_text,
+            use_image_text=uses_image_text(cfg) and needs_text,
         )
     return datasets
 

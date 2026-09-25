@@ -135,3 +135,63 @@ def test_image_swap_keeps_text():
     swapped = swap_images(records, seed=0)
     assert [r["caption"] for r in swapped] == [r["caption"] for r in records]
     assert all(a["image_path"] != b["image_path"] for a, b in zip(records, swapped))
+
+
+def test_image_text_cache_resume_and_compose(tmp_path):
+    from vimmsd.data.image_text import build_image_text_cache, compose_image_text, list_images
+
+    img_dir = tmp_path / "train-images"
+    img_dir.mkdir()
+    for i in range(3):
+        Image.new("RGB", (8, 8)).save(img_dir / f"{i}.jpg")
+    calls = []
+
+    def fake(path):
+        calls.append(path.name)
+        if path.name == "2.jpg":
+            raise RuntimeError("ảnh lỗi")
+        return f"text {path.stem}"
+
+    out = tmp_path / "cache" / "ocr.json"
+    cache = build_image_text_cache(list_images([img_dir]), out, fake, save_every=1)
+    assert cache == {"train-images/0.jpg": "text 0", "train-images/1.jpg": "text 1", "train-images/2.jpg": ""}
+    calls.clear()
+    build_image_text_cache(list_images([img_dir]), out, fake)
+    assert calls == []  # chạy lại: bỏ qua ảnh đã có trong cache
+
+    assert compose_image_text("KHI MÀI", "Một con bò") == "Chữ trong ảnh: KHI MÀI. Mô tả ảnh: Một con bò"
+    assert compose_image_text("", "Một con bò") == "Mô tả ảnh: Một con bò"
+    assert compose_image_text(" ", "") == ""
+
+
+def test_dataset_with_image_text(fake_data):
+    from vimmsd.data.dataset import load_image_texts
+
+    (fake_data / "cache").mkdir(exist_ok=True)
+    (fake_data / "cache" / "ocr.json").write_text(json.dumps({"images/0.jpg": "chữ trên ảnh"}), encoding="utf-8")
+    (fake_data / "cache" / "desc.json").write_text(json.dumps({"images/0.jpg": "một người"}), encoding="utf-8")
+    cfg = Config(paths=Config(cache_dir=str(fake_data / "cache")), data=Config(image_text=Config(
+        use_ocr=True, use_description=True, dir=None, ocr_cache="ocr.json", description_cache="desc.json")))
+    texts = load_image_texts(cfg)
+
+    records = load_records(fake_data / "train.json", fake_data / "images",
+                           {l: i for i, l in enumerate(LABELS)}, texts)
+    assert records[0]["ocr"] == "chữ trên ảnh" and records[1]["description"] == ""
+    ds = ViMMSDDataset(records, text_preprocessor=TextPreprocessor(emoji="keep", word_segment=False),
+                       load_image=False, use_image_text=True)
+    assert ds[0]["image_text"] == "Chữ trong ảnh: chữ trên ảnh. Mô tả ảnh: một người"
+    assert ds[1]["image_text"] == ""
+
+    seen = {}
+
+    class PairTokenizer(StubTokenizer):
+        def __call__(self, texts, pairs=None, **kw):
+            seen["pairs"] = pairs
+            return super().__call__(texts, **kw)
+
+    ViMMSDCollator(PairTokenizer())([ds[0], ds[1]])
+    assert seen["pairs"][0].startswith("Chữ trong ảnh")
+
+    cfg.data.image_text.description_cache = "missing.json"
+    with pytest.raises(FileNotFoundError):
+        load_image_texts(cfg)

@@ -46,6 +46,7 @@ IE403/
 │       ├── data/
 │       │   ├── dataset.py         # class ViMMSDDataset (PyTorch Dataset)
 │       │   ├── preprocessing.py   # word segmentation, chuẩn hóa text, resize/normalize ảnh
+│       │   ├── image_text.py      # ảnh → text: OCR (PaddleOCR) + mô tả ảnh (VLM Vintern), cache JSON
 │       │   └── augmentation.py    # back-translation, image augmentation nhẹ
 │       │
 │       ├── models/
@@ -62,7 +63,6 @@ IE403/
 │       ├── analysis/              # Tuần 6-7
 │       │   ├── shortcut_check.py    # thí nghiệm tráo ảnh
 │       │   ├── interpretability.py  # Grad-CAM, attention map visualization
-│       │   ├── ocr.py               # trích xuất text trong ảnh (PaddleOCR)
 │       │   └── llm_compare.py       # gọi Vintern/LLM đa modal, so sánh kết quả
 │       │
 │       └── utils/
@@ -73,6 +73,7 @@ IE403/
 │
 ├── scripts/
 │   ├── download_data.py     # tải ViMMSD bằng Kaggle API (chỉ dùng khi chạy local)
+│   ├── extract_image_text.py # tạo cache OCR / mô tả VLM cho toàn bộ ảnh (chạy 1 lần, cần GPU)
 │   ├── train.py              # entrypoint train: `python train.py --config configs/xxx.yaml`
 │   └── evaluate.py           # entrypoint eval trên test set + xuất confusion matrix
 │
@@ -80,12 +81,13 @@ IE403/
 │   ├── 00_template.ipynb      # notebook mẫu chứa sẵn cell bootstrap (mục 6), copy ra khi tạo notebook mới
 │   ├── 00_dataset_check.ipynb # kiểm tra dữ liệu ViMMSD, chạy độc lập không cần clone repo
 │   ├── 01_eda.ipynb
+│   ├── 01b_image_text_extraction.ipynb  # chạy OCR + VLM, kiểm tra chất lượng text sinh ra
 │   ├── 02_baseline_text.ipynb
 │   ├── 03_baseline_image.ipynb
 │   ├── 04_fusion_concat.ipynb
 │   ├── 05_fusion_cross_attention.ipynb
 │   ├── 06_shortcut_interpretability.ipynb
-│   └── 07_ocr_llm_comparison.ipynb
+│   └── 07_ocr_llm_comparison.ipynb    # ablation OCR/mô tả VLM + so sánh LLM đa modal
 │
 ├── reports/
 │   ├── results.md            # bảng tổng hợp kết quả mọi thí nghiệm (cập nhật liên tục)
@@ -102,13 +104,13 @@ IE403/
 | Module | Dùng ở tuần | Mô tả |
 |---|---|---|
 | `data/preprocessing.py`, `data/dataset.py` | Tuần 1-2 | Load raw data, tách từ, chuẩn hóa, resize ảnh, trả về tensor sẵn sàng cho model |
+| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr.json`, `vlm_description.json`; bật bằng `data.image_text` trong config |
 | `models/text_encoder.py`, `models/image_encoder.py` | Tuần 3 | Wrapper PhoBERT/CLIP dùng độc lập cho baseline |
 | `models/fusion.py`, `models/classifier.py` | Tuần 4-5 | `ConcatFusion` (Tuần 4), `CrossAttentionFusion` (Tuần 5) — cùng interface để dễ swap trong config |
 | `training/losses.py` | Tuần 5 | `FocalLoss`, weighted CrossEntropy cho lớp hiếm `text-sarcasm` |
 | `training/trainer.py`, `training/metrics.py` | Tuần 3-8 | Vòng lặp train/eval dùng chung cho mọi thí nghiệm, tránh copy-paste code train ở từng notebook |
 | `analysis/shortcut_check.py` | Tuần 6 | Swap ảnh giữa các mẫu, đo % thay đổi dự đoán |
 | `analysis/interpretability.py` | Tuần 6 | Grad-CAM trên ảnh, attention weight trên text |
-| `analysis/ocr.py` | Tuần 7 | Trích OCR, gộp vào input |
 | `analysis/llm_compare.py` | Tuần 7 | Prompt Vintern/LLM đa modal, so sánh với model fine-tune |
 
 ---
@@ -276,8 +278,8 @@ pandas
 matplotlib
 pillow
 tqdm
-paddleocr            # Tuần 7
-paddlepaddle         # backend cho paddleocr (Tuần 7)
+paddleocr            # OCR ở bước tiền xử lý ảnh
+paddlepaddle         # backend cho paddleocr
 kaggle               # download data qua API (chỉ dùng local)
 pytest
 ```
@@ -291,7 +293,7 @@ underthesea
 emoji
 ```
 
-`paddleocr` nặng và chỉ cần ở Tuần 7 nên không nằm trong file này. `notebooks/07_ocr_llm_comparison.ipynb` tự cài `paddlepaddle-gpu paddleocr`.
+`paddleocr` nặng và chỉ cần khi tạo cache ảnh → text (chạy 1 lần) nên không nằm trong file này. `notebooks/01b_image_text_extraction.ipynb` tự cài `paddlepaddle-gpu paddleocr timm einops` (`timm`, `einops` cần cho Vintern). Các notebook train chỉ đọc cache JSON nên không cần cài OCR/VLM.
 
 Không cần môi trường ảo phức tạp. Kaggle/Colab cài qua cell bootstrap, còn local thì chạy `pip install -r requirements.txt && pip install -e .` một lần. Kiểm tra nhanh (không cần GPU/mạng): `pytest tests`.
 
@@ -304,5 +306,5 @@ Khung code ở mục 2 đã có đủ (trừ `PLAN.md`). Việc cần làm để
 1. ~~`git init`, push lên GitHub, sửa `REPO` trong cell bootstrap~~ (đã xong: repo public [yunaLee21/Multimodal_Sarcasm_Detection](https://github.com/yunaLee21/Multimodal_Sarcasm_Detection), không cần `GITHUB_TOKEN`).
 2. Chạy `notebooks/00_dataset_check.ipynb` trên Kaggle (attach `hhhoang/vimmsd-dataset`), đối chiếu đường dẫn nó in ra với `paths.kaggle.data_dir` trong `configs/base.yaml`.
 3. Xử lý các điểm "CHÚ Ý" trong bảng tổng kết của notebook (tiền xử lý caption, cách chia val/test).
-4. Chạy `notebooks/00_template.ipynb` trên Kaggle để chắc chắn clone + import `vimmsd` + đọc dữ liệu hoạt động, rồi chạy `01_eda.ipynb`.
+4. Chạy `notebooks/00_template.ipynb` trên Kaggle để chắc chắn clone + import `vimmsd` + đọc dữ liệu hoạt động, rồi chạy `01_eda.ipynb` và `01b_image_text_extraction.ipynb` (tạo cache OCR + mô tả VLM, cần GPU).
 5. Sau đó các thành viên làm song song theo notebook 02–07, chỉnh hyperparameter qua config/`--override`, sửa code trong `src/` qua PR.

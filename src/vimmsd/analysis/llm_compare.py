@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from tqdm.auto import tqdm
 
+from vimmsd.data.image_text import load_vintern, vintern_pixel_values
 from vimmsd.training.metrics import compute_metrics
 
 LABEL_DESCRIPTIONS = {
@@ -82,23 +83,10 @@ class HFVisionLanguageClassifier:
 
 
 class VinternClassifier:
-    """Vintern (5CD-AI, dựa trên InternVL, tối ưu cho tiếng Việt). Chỉ hỗ trợ zero-shot.
-    Dùng 1 tile 448x448 thay cho dynamic tiling của InternVL để đơn giản và tiết kiệm VRAM."""
+    """Vintern (5CD-AI, dựa trên InternVL, tối ưu cho tiếng Việt). Chỉ hỗ trợ zero-shot."""
 
-    MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-
-    def __init__(self, model_name="5CD-AI/Vintern-1B-v3_5", labels=None, max_new_tokens=10, dtype=torch.bfloat16):
-        from torchvision import transforms
-        from transformers import AutoModel, AutoTokenizer
-
-        self.model = AutoModel.from_pretrained(model_name, torch_dtype=dtype, trust_remote_code=True).eval().cuda()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=False)
-        self.transform = transforms.Compose([
-            transforms.Resize((448, 448), interpolation=transforms.InterpolationMode.BICUBIC),
-            transforms.ToTensor(),
-            transforms.Normalize(self.MEAN, self.STD),
-        ])
-        self.dtype = dtype
+    def __init__(self, model_name="5CD-AI/Vintern-1B-v3_5", labels=None, max_new_tokens=10):
+        self.model, self.tokenizer = load_vintern(model_name)
         self.labels = labels
         self.max_new_tokens = max_new_tokens
 
@@ -106,9 +94,8 @@ class VinternClassifier:
     def __call__(self, image_path, caption, examples=()):
         if examples:
             raise NotImplementedError("VinternClassifier chỉ hỗ trợ zero-shot")
-        pixel_values = self.transform(Image.open(image_path).convert("RGB"))[None].to(self.dtype).cuda()
         question = "<image>\n" + build_instruction(self.labels) + "\n" + build_question(caption)
-        return self.model.chat(self.tokenizer, pixel_values, question,
+        return self.model.chat(self.tokenizer, vintern_pixel_values(image_path), question,
                                dict(max_new_tokens=self.max_new_tokens, do_sample=False))
 
 

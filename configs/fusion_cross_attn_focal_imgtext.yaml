@@ -1,0 +1,7 @@
+# Mô hình đầy đủ: cross-attention + focal loss, text input có thêm OCR + mô tả VLM.
+inherit: fusion_cross_attn_focal.yaml
+data:
+  max_length: 256
+  image_text:
+    use_ocr: true
+    use_description: true

@@ -38,6 +38,10 @@ Thách thức chính của bài toán:
 2. **Tiền xử lý dữ liệu**
    - Văn bản: tách từ tiếng Việt, chuẩn hóa teencode/viết tắt, xử lý emoji.
    - Ảnh: resize, chuẩn hóa theo yêu cầu của encoder ảnh sử dụng.
+   - Ảnh → text (chạy offline một lần cho toàn bộ ảnh, lưu cache):
+     - **OCR** (PaddleOCR): trích chữ xuất hiện trong ảnh. Nhiều mẫu `image-sarcasm`/`multi-sarcasm` là meme có chữ, nội dung mỉa mai nằm ngay trong chữ đó (xem `reports/dataset_report.md`).
+     - **Mô tả ảnh bằng VLM** (Vintern-1B, mô hình đa phương thức tiếng Việt): sinh 1–2 câu mô tả nội dung ảnh (ai/cái gì, hành động, bối cảnh, biểu cảm). Prompt trung tính, không nhắc tới mỉa mai, để không đưa phán đoán nhãn vào input.
+     - Chữ trong ảnh và mô tả ảnh được ghép thành segment thứ hai của PhoBERT, cạnh caption, cho cả mô hình chỉ dùng text lẫn mô hình fusion.
 
 3. **Xây dựng baseline đơn modality**
    - Mô hình chỉ dùng text (fine-tune PhoBERT).
@@ -52,7 +56,7 @@ Thách thức chính của bài toán:
    - Áp dụng các kỹ thuật như class weighting hoặc focal loss, đặc biệt cho lớp có rất ít mẫu.
 
 6. **Thử nghiệm mở rộng (nếu còn thời gian)**
-   - Trích xuất văn bản trong ảnh (OCR) để bổ sung thông tin cho các ảnh dạng meme có chữ.
+   - Ablation đóng góp của text trích từ ảnh: chỉ caption, + OCR, + mô tả VLM, + cả hai.
    - So sánh với cách tiếp cận zero-shot/few-shot bằng mô hình ngôn ngữ đa phương thức (LLM đa modal).
 
 7. **Đánh giá mô hình**

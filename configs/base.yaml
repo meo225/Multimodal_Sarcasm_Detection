@@ -22,6 +22,8 @@ data:
   train_image_dir: training-images/train-images
   public_test_json: vimmsd-public-test.json      # không có nhãn, chỉ dùng để xuất dự đoán
   public_test_image_dir: public-test-images/dev-images
+  private_test_json: vimmsd-private-test.json    # không có nhãn
+  private_test_image_dir: private-test-images/test-images
   labels: [not-sarcasm, text-sarcasm, image-sarcasm, multi-sarcasm]
   val_ratio: 0.1     # val/test chia stratified từ tập train có nhãn
   test_ratio: 0.1
@@ -33,8 +35,14 @@ data:
     word_segment: true
   image_augment: false
   sampler: random     # random | weighted (oversampling lớp hiếm)
-  use_ocr: false
-  ocr_cache: ocr.json # nằm trong paths.cache_dir
+  # Tiền xử lý ảnh thành text (tạo trước bằng scripts/extract_image_text.py, xem notebooks/01b):
+  # chữ trong ảnh (OCR) + mô tả ảnh (VLM), ghép thành segment thứ 2 của PhoBERT cạnh caption.
+  image_text:
+    use_ocr: false
+    use_description: false
+    dir: null                           # null = paths.cache_dir; Kaggle: thư mục output notebook 01b đã attach
+    ocr_cache: ocr.json
+    description_cache: vlm_description.json
 
 model:
   modality: concat    # text | image | concat | cross_attn
