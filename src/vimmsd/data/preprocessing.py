@@ -6,7 +6,7 @@ import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
-# Bảng ánh xạ teencode và từ viết tắt phổ biến trên mạng xã hội
+# Bảng ánh xạ teencode và từ viết tắt tiếng Việt
 TEENCODE = {
     # Phủ định
     "ko": "không", "k": "không", "kh": "không", "khg": "không", "hok": "không",
@@ -55,9 +55,8 @@ SPACE_RE = re.compile(r"\s+")
 INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\xa0\u202a-\u202e]")
 
 
-
 def normalize_unicode(text: str) -> str:
-    # dữ liệu mạng xã hội trộn lẫn dạng dựng sẵn và tổ hợp của dấu tiếng Việt
+    # Chuẩn hóa về dạng Unicode NFC
     return unicodedata.normalize("NFC", text)
 
 
@@ -66,8 +65,7 @@ def _base_letter(ch: str) -> str:
 
 
 def collapse_repeats(text: str) -> str:
-    """Rút gọn chuỗi >= 3 chữ cái cùng gốc (bỏ qua dấu) về chữ đầu: "quáaaa" -> "quá", "đẹppppp" -> "đẹp".
-    Không đụng tới số ("1000") hay chữ lặp 2 lần hợp lệ ("xoong")."""
+    """Rút gọn chuỗi có từ 3 ký tự lặp liên tiếp cùng gốc chữ cái về một ký tự."""
     out, i = [], 0
     while i < len(text):
         ch = text[i]
@@ -99,7 +97,7 @@ def handle_emoji(text: str, mode: str) -> str:
     if mode == "demojize":
         text = emoji.demojize(text, delimiters=(" ", " "))
         return text.replace("_", " ")
-    raise ValueError(f"emoji mode không hợp lệ: {mode}")
+    raise ValueError(f"Chế độ emoji không hợp lệ: {mode}")
 
 
 @lru_cache(maxsize=1)
@@ -110,7 +108,7 @@ def _word_tokenize():
 
 
 def word_segment(text: str) -> str:
-    # PhoBERT được pretrain trên văn bản đã tách từ, từ ghép nối bằng "_" (ví dụ "mạng_xã_hội")
+    # Tách từ tiếng Việt theo định dạng từ ghép nối bằng gạch dưới cho PhoBERT
     return _word_tokenize()(text, format="text")
 
 
@@ -140,7 +138,7 @@ def clean_text(
 
 
 class TextPreprocessor:
-    """Tiền xử lý toàn bộ caption một lần và cache ra đĩa (tách từ underthesea khá chậm)."""
+    """Xử lý hàng loạt và lưu trữ kết quả tiền xử lý văn bản ra đĩa đệm."""
 
     def __init__(self, lowercase=False, normalize_teencode=True, emoji="demojize", word_segment=True):
         self.kwargs = dict(
