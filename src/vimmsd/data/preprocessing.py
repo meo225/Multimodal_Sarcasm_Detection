@@ -1,47 +1,59 @@
 import hashlib
+import html
 import json
 import re
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
-# Chỉ gồm các từ viết tắt có nghĩa rõ ràng; bỏ qua từ đa nghĩa như "m", "t", "v", "bn".
+# Bảng ánh xạ teencode và từ viết tắt phổ biến trên mạng xã hội
 TEENCODE = {
-    "ko": "không", "k": "không", "kh": "không", "khg": "không", "hok": "không", "hem": "không",
-    "hông": "không", "khum": "không", "kg": "không",
-    "dc": "được", "đc": "được", "dk": "được", "đk": "được",
+    # Phủ định
+    "ko": "không", "k": "không", "kh": "không", "khg": "không", "hok": "không",
+    "hem": "không", "hông": "không", "hổng": "không", "hơm": "không", "hăm": "không",
+    "khum": "không", "kô": "không", "chx": "chưa",
+
+    # Động từ và trạng thái
+    "dc": "được", "đc": "được",
+    "lm": "làm", "bít": "biết", "bik": "biết", "bjt": "biết",
+    "đag": "đang", "dag": "đang", "thik": "thích", "thjk": "thích",
+    "iu": "yêu", "ib": "nhắn tin", "nt": "nhắn tin", "tl": "trả lời",
+    "hỉu": "hiểu",
+
+    # Danh từ và đại từ
     "j": "gì", "ji": "gì",
     "vs": "với", "zới": "với",
     "mn": "mọi người", "mng": "mọi người",
-    "ng": "người",
+    "ng": "người", "mik": "mình", "mh": "mình",
+    "ae": "anh em", "ny": "người yêu", "cr": "crush", "gđ": "gia đình",
+    "cmt": "bình luận", "stt": "trạng thái",
+    "acc": "tài khoản", "sđt": "số điện thoại",
+
+    # Liên từ và từ cảm thán
     "cx": "cũng", "cug": "cũng", "cũg": "cũng",
-    "r": "rồi", "rùi": "rồi", "ròi": "rồi",
-    "ntn": "như thế nào",
-    "trc": "trước",
+    "rùi": "rồi", "ròi": "rồi",
+    "ntn": "như thế nào", "trc": "trước",
     "wa": "quá", "qá": "quá", "qa": "quá",
-    "mik": "mình", "mk": "mình", "mh": "mình",
-    "lm": "làm",
-    "bít": "biết", "bik": "biết", "bjt": "biết",
-    "đag": "đang", "dag": "đang",
     "z": "vậy", "zậy": "vậy", "vại": "vậy",
-    "thik": "thích", "thjk": "thích",
-    "iu": "yêu",
-    "nhìu": "nhiều",
-    "ak": "à",
-    "ib": "nhắn tin",
+    "nhìu": "nhiều", "ak": "à",
     "tks": "cảm ơn", "thanks": "cảm ơn", "thank": "cảm ơn",
     "hnay": "hôm nay", "hqua": "hôm qua",
-    "ae": "anh em",
     "nma": "nhưng mà", "nhma": "nhưng mà",
-    "bh": "bây giờ", "bjo": "bây giờ",
-    "sn": "sinh nhật",
-    "ny": "người yêu",
+    "bjo": "bây giờ",
+    "thui": "thôi", "lun": "luôn", "nx": "nữa",
+    "đou": "đâu", "đâuu": "đâu", "hẻ": "hả",
+    "đr": "đúng rồi", "đug": "đúng",
+    "uk": "ừ", "uhm": "ừ", "ukm": "ừ",
+    "oki": "ok", "okie": "ok", "okela": "ok",
+    "klq": "không liên quan", "tg": "thời gian",
 }
 
 URL_RE = re.compile(r"https?://\S+|www\.\S+")
 MENTION_RE = re.compile(r"@\w+")
 WORD_RE = re.compile(r"\w+", re.UNICODE)
 SPACE_RE = re.compile(r"\s+")
+INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\xa0\u202a-\u202e]")
+
 
 
 def normalize_unicode(text: str) -> str:
@@ -109,7 +121,9 @@ def clean_text(
     emoji_mode: str = "demojize",
     word_segment_: bool = True,
 ) -> str:
-    text = normalize_unicode(text or "")
+    text = html.unescape(text or "")
+    text = INVISIBLE_CHARS_RE.sub(" ", text)
+    text = normalize_unicode(text)
     text = URL_RE.sub(" ", text)
     text = MENTION_RE.sub(" ", text)
     text = text.replace("#", " ")

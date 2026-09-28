@@ -58,6 +58,54 @@ def test_clean_text_normalizes_unicode():
     assert clean_text(decomposed, emoji_mode="keep", word_segment_=False) == "hoà"
 
 
+def test_clean_text_unescapes_html_and_teencode():
+    text = "Mn ơi cmt này đỉnh thui &amp; nhìn mlem ghê á, ko mua đc"
+    out = clean_text(text, emoji_mode="keep", word_segment_=False)
+    assert "mọi người" in out and "bình luận" in out and "&" in out and "thôi" in out and "không" in out and "được" in out
+
+
+def test_clean_text_preserves_sensitive_words():
+    # Các từ có nguy cơ nhầm lẫn nhưng phải giữ nguyên vẹn
+    text = "Ăn sữa chua cay, nặng 70 kg, sinh SN 1999, mua bảo hiểm Dr.G và biết PK game"
+    out = clean_text(text, emoji_mode="keep", word_segment_=False)
+    assert "sữa chua cay" in out
+    assert "70 kg" in out
+    assert "SN 1999" in out
+    assert "bảo hiểm" in out
+    assert "Dr.G" in out
+    assert "PK game" in out
+
+
+def test_clean_text_teencode_with_punctuation_and_caps():
+    # Teencode viết hoa hoặc dính dấu câu
+    text = "Khum? ĐC! (Ko) \"ntn\"... wa' đã"
+    out = clean_text(text, emoji_mode="keep", word_segment_=False)
+    assert "không?" in out.lower()
+    assert "được!" in out.lower()
+    assert "(không)" in out.lower()
+    assert "\"như thế nào\"" in out.lower()
+
+
+def test_clean_text_emoji_modes():
+    text = "Đỉnh quá 😂 🐧"
+    assert "face with tears of joy" in clean_text(text, emoji_mode="demojize", word_segment_=False)
+    assert "😂" in clean_text(text, emoji_mode="keep", word_segment_=False)
+    assert "😂" not in clean_text(text, emoji_mode="remove", word_segment_=False)
+
+
+def test_clean_text_empty_and_whitespace():
+    assert clean_text("", word_segment_=False) == ""
+    assert clean_text("   \n\t   ", word_segment_=False) == ""
+    assert clean_text(None, word_segment_=False) == ""
+
+
+def test_clean_text_word_segment_phobert():
+    text = "Học sinh sinh viên dùng mạng xã hội"
+    out = clean_text(text, emoji_mode="keep", word_segment_=True)
+    assert "học_sinh" in out.lower() or "sinh_viên" in out.lower() or "mạng_xã_hội" in out.lower()
+
+
+
 def test_load_and_split(fake_data):
     records = load_records(fake_data / "train.json", fake_data / "images", {l: i for i, l in enumerate(LABELS)})
     assert len(records) == 40 and {r["label"] for r in records} == {0, 1, 2, 3}

@@ -22,3 +22,6 @@ venv/
 # secrets
 kaggle.json
 .env
+
+# docs
+docs/

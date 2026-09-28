@@ -106,7 +106,10 @@ def load_config(path, overrides=None, env=None) -> Config:
     if env not in all_paths:
         raise KeyError(f"configs thiếu paths cho môi trường '{env}'")
     root = find_project_root(path)
-    cfg["paths"] = {k: str(root / v) if not Path(v).is_absolute() else v for k, v in all_paths[env].items()}
+    cfg["paths"] = {
+        k: v if (str(v).startswith("/") or Path(v).is_absolute()) else str(root / v)
+        for k, v in all_paths[env].items()
+    }
     cfg["env"] = env
     cfg["config_path"] = str(path)
     cfg.setdefault("name", path.stem)
