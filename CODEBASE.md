@@ -46,7 +46,7 @@ IE403/
 │       ├── data/
 │       │   ├── dataset.py         # class ViMMSDDataset (PyTorch Dataset)
 │       │   ├── preprocessing.py   # word segmentation, chuẩn hóa text, resize/normalize ảnh
-│       │   ├── image_text.py      # ảnh → text: OCR (PaddleOCR) + mô tả ảnh (VLM Vintern), cache JSON
+│       │   ├── image_text.py      # ảnh → text: OCR (PaddleOCR + VietOCR) + mô tả ảnh (VLM Vintern), cache JSON
 │       │   └── augmentation.py    # back-translation, image augmentation nhẹ
 │       │
 │       ├── models/
@@ -278,8 +278,10 @@ pandas
 matplotlib
 pillow
 tqdm
-paddleocr            # OCR ở bước tiền xử lý ảnh
+paddleocr>=3.0       # phát hiện vùng chữ cho OCR ở bước tiền xử lý ảnh
 paddlepaddle         # backend cho paddleocr
+einops               # cần cho vietocr (và Vintern)
+gdown                # cần cho vietocr
 kaggle               # download data qua API (chỉ dùng local)
 pytest
 ```
@@ -293,7 +295,9 @@ underthesea
 emoji
 ```
 
-`paddleocr` nặng và chỉ cần khi tạo cache ảnh → text (chạy 1 lần) nên không nằm trong file này. `notebooks/01b_image_text_extraction.ipynb` tự cài `paddlepaddle-gpu paddleocr timm einops` (`timm`, `einops` cần cho Vintern). Các notebook train chỉ đọc cache JSON nên không cần cài OCR/VLM.
+OCR gồm 2 bước: PaddleOCR phát hiện vùng chữ, VietOCR nhận dạng từng dòng (model nhận dạng của PaddleOCR thiếu các chữ cái mang dấu thanh tiếng Việt). `vietocr` ghim `pillow`/`einops`/`gdown` bản cũ nên không nằm trong `requirements.txt`, cài riêng bằng `pip install --no-deps vietocr`.
+
+`paddleocr` nặng và chỉ cần khi tạo cache ảnh → text (chạy 1 lần) nên không nằm trong file này. `notebooks/01b_image_text_extraction.ipynb` tự cài `paddlepaddle-gpu paddleocr timm einops gdown` và `vietocr` (`timm`, `einops` cần cho Vintern). Các notebook train chỉ đọc cache JSON nên không cần cài OCR/VLM.
 
 Không cần môi trường ảo phức tạp. Kaggle/Colab cài qua cell bootstrap, còn local thì chạy `pip install -r requirements.txt && pip install -e .` một lần. Kiểm tra nhanh (không cần GPU/mạng): `pytest tests`.
 

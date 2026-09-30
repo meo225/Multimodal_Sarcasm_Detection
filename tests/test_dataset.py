@@ -202,14 +202,44 @@ def test_image_text_cache_resume_and_compose(tmp_path):
 
     out = tmp_path / "cache" / "ocr.json"
     cache = build_image_text_cache(list_images([img_dir]), out, fake, save_every=1)
-    assert cache == {"train-images/0.jpg": "text 0", "train-images/1.jpg": "text 1", "train-images/2.jpg": ""}
+    # ảnh lỗi không được ghi vào cache: chuỗi rỗng chỉ dành cho ảnh không có text
+    assert cache == {"train-images/0.jpg": "text 0", "train-images/1.jpg": "text 1"}
+    assert json.loads(out.read_text(encoding="utf-8")) == cache
     calls.clear()
     build_image_text_cache(list_images([img_dir]), out, fake)
-    assert calls == []  # chạy lại: bỏ qua ảnh đã có trong cache
+    assert calls == ["2.jpg"]  # chạy lại: bỏ qua ảnh đã có trong cache, thử lại ảnh lỗi
 
     assert compose_image_text("KHI MÀI", "Một con bò") == "Chữ trong ảnh: KHI MÀI. Mô tả ảnh: Một con bò"
     assert compose_image_text("", "Một con bò") == "Mô tả ảnh: Một con bò"
     assert compose_image_text(" ", "") == ""
+
+
+def test_image_text_cache_stops_when_every_image_fails(tmp_path):
+    from vimmsd.data.image_text import build_image_text_cache, list_images
+
+    img_dir = tmp_path / "train-images"
+    img_dir.mkdir()
+    for i in range(6):
+        Image.new("RGB", (8, 8)).save(img_dir / f"{i}.jpg")
+    calls = []
+
+    def broken(path):
+        calls.append(path.name)
+        raise RuntimeError("hết VRAM")
+
+    out = tmp_path / "cache" / "ocr.json"
+    with pytest.raises(RuntimeError, match="3 ảnh lỗi liên tiếp"):
+        build_image_text_cache(list_images([img_dir]), out, broken, max_consecutive_failures=3)
+    assert len(calls) == 3 and json.loads(out.read_text(encoding="utf-8")) == {}
+
+
+def test_reading_order():
+    from vimmsd.data.image_text import reading_order
+
+    # 2 dòng, dòng trên có 2 box lệch nhau vài pixel theo chiều dọc
+    right, left, below = (60, 12, 100, 32), (0, 10, 50, 30), (0, 40, 100, 60)
+    assert reading_order([below, right, left]) == [left, right, below]
+    assert reading_order([]) == []
 
 
 def test_dataset_with_image_text(fake_data):
@@ -243,3 +273,8 @@ def test_dataset_with_image_text(fake_data):
     cfg.data.image_text.description_cache = "missing.json"
     with pytest.raises(FileNotFoundError):
         load_image_texts(cfg)
+
+    # cache không khớp ảnh nào (sai thư mục, chưa chạy split này) phải báo lỗi thay vì âm thầm trả text rỗng
+    with pytest.raises(ValueError, match="không có ảnh nào"):
+        load_records(fake_data / "train.json", fake_data / "images", {l: i for i, l in enumerate(LABELS)},
+                     {"ocr": {"other-images/0.jpg": "x"}})

@@ -4,12 +4,14 @@
     python scripts/extract_image_text.py --config configs/base.yaml --task description --vlm vintern
 
 Kết quả lưu vào <data.image_text.dir hoặc paths.cache_dir>/<ocr_cache | description_cache>.
-Chạy tiếp được nếu bị ngắt: ảnh đã có trong file cache sẽ được bỏ qua."""
+Chạy tiếp được nếu bị ngắt: ảnh đã có trong file cache sẽ được bỏ qua. Ảnh lỗi không được ghi vào cache,
+script thoát với mã lỗi nếu còn ảnh thiếu; chạy lại để thử lại các ảnh đó."""
 import argparse
 import logging
+import sys
 from pathlib import Path
 
-from vimmsd.data.image_text import OCRExtractor, VLMDescriber, build_image_text_cache, list_images
+from vimmsd.data.image_text import OCRExtractor, VLMDescriber, build_image_text_cache, image_key, list_images
 from vimmsd.utils.config import load_config
 
 
@@ -44,13 +46,17 @@ def main():
     it_cfg = cfg.data.image_text
     out_dir = Path(it_cfg.get("dir") or cfg.paths.cache_dir)
     if args.task == "ocr":
-        extractor, out_name = OCRExtractor(lang="vi"), it_cfg.ocr_cache
+        extractor, out_name = OCRExtractor(), it_cfg.ocr_cache
     else:
         extractor, out_name = VLMDescriber(backend=args.vlm, model_name=args.model), it_cfg.description_cache
 
     cache = build_image_text_cache(paths, out_dir / out_name, extractor, desc=args.task)
-    non_empty = sum(bool(cache.get(f"{p.parent.name}/{p.name}")) for p in paths)
+    keys = [image_key(p.parent, p.name) for p in paths]
+    non_empty = sum(bool(cache.get(k)) for k in keys)
+    missing = sum(k not in cache for k in keys)
     print(f"{args.task}: {non_empty}/{len(paths)} ảnh có text, lưu tại {out_dir / out_name}")
+    if missing:
+        sys.exit(f"{args.task}: {missing}/{len(paths)} ảnh lỗi, chưa có trong cache. Xem log rồi chạy lại để thử lại.")
 
 
 if __name__ == "__main__":

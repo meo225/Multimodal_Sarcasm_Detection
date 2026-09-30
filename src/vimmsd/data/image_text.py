@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 
+import numpy as np
 import torch
 from PIL import Image
 from tqdm.auto import tqdm
@@ -38,25 +39,53 @@ def compose_image_text(ocr="", description=""):
     return " ".join(parts)
 
 
+def reading_order(boxes):
+    """Sắp các box (x0, y0, x1, y1) theo thứ tự đọc: từng dòng từ trên xuống, trong dòng từ trái sang.
+    Hai box cùng dòng nếu tâm theo chiều dọc lệch nhau dưới nửa chiều cao box."""
+    lines = []
+    for box in sorted(boxes, key=lambda b: (b[1], b[0])):
+        center = (box[1] + box[3]) / 2
+        if lines and abs(center - lines[-1][0]) < 0.5 * (box[3] - box[1]):
+            lines[-1][1].append(box)
+        else:
+            lines.append((center, [box]))
+    return [box for _, line in lines for box in sorted(line, key=lambda b: b[0])]
+
+
 class OCRExtractor:
-    """Wrapper PaddleOCR, hỗ trợ cả API 2.x (`.ocr`) và 3.x (`.predict`)."""
+    """OCR hai bước: PaddleOCR (>= 3.0) phát hiện vùng chữ, VietOCR nhận dạng từng dòng.
 
-    def __init__(self, lang="vi", min_score=0.5, **kwargs):
-        from paddleocr import PaddleOCR
+    Không dùng phần nhận dạng của PaddleOCR vì bộ ký tự của các model rec (latin PP-OCRv3/v5, PP-OCRv6)
+    thiếu chữ cái mang dấu thanh tiếng Việt (ạ, ế, ộ...): "thật làm phiền" bị đọc thành "tht làm phin"."""
 
-        self.ocr = PaddleOCR(lang=lang, **kwargs)
+    def __init__(self, rec_model="vgg_transformer", min_score=0.8, device=None, pad=2, **det_kwargs):
+        from paddleocr import TextDetection
+        from vietocr.tool.config import Cfg
+        from vietocr.tool.predictor import Predictor
+
+        self.detector = TextDetection(**det_kwargs)
+        rec_cfg = Cfg.load_config_from_name(rec_model)
+        rec_cfg["device"] = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        rec_cfg["cnn"]["pretrained"] = False  # trọng số VietOCR đã gồm backbone, không cần tải thêm VGG ImageNet
+        self.recognizer = Predictor(rec_cfg)
+        # độ tin cậy của VietOCR: dòng chữ rõ thường >= 0.85, vùng không phải chữ hoặc chữ không phải Latin < 0.8
         self.min_score = min_score
+        self.pad = pad
 
     def __call__(self, image_path) -> str:
-        path = str(image_path)
-        if hasattr(self.ocr, "predict"):
-            pairs = []
-            for r in self.ocr.predict(path):
-                pairs.extend(zip(r["rec_texts"], r["rec_scores"]))
-        else:
-            results = self.ocr.ocr(path) or []
-            pairs = [(line[1][0], line[1][1]) for page in results if page for line in page]
-        return " ".join(text for text, score in pairs if score >= self.min_score)
+        image = Image.open(image_path)
+        image.seek(0)  # ảnh GIF: lấy frame đầu
+        image = image.convert("RGB")
+        # đưa mảng BGR thay vì đường dẫn: detector và bước crop dùng chung một ảnh (cùng frame, cùng chiều xoay)
+        bgr = np.ascontiguousarray(np.asarray(image)[:, :, ::-1])
+        polys = [np.asarray(p) for r in self.detector.predict(bgr) for p in r["dt_polys"]]
+        boxes = reading_order([(p[:, 0].min(), p[:, 1].min(), p[:, 0].max(), p[:, 1].max()) for p in polys])
+        if not boxes:
+            return ""
+        crops = [image.crop((max(0, x0 - self.pad), max(0, y0 - self.pad), x1 + self.pad, y1 + self.pad))
+                 for x0, y0, x1, y1 in boxes]
+        texts, scores = self.recognizer.predict_batch(crops, return_prob=True)
+        return " ".join(t.strip() for t, s in zip(texts, scores) if s >= self.min_score and t.strip())
 
 
 VINTERN_MEAN, VINTERN_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -124,23 +153,36 @@ def list_images(image_dirs):
     return [p for d in image_dirs for p in sorted(Path(d).iterdir()) if p.suffix.lower() in IMAGE_EXTS]
 
 
-def build_image_text_cache(image_paths, out_path, extractor, save_every=100, desc="image text"):
+def build_image_text_cache(image_paths, out_path, extractor, save_every=100, desc="image text",
+                           max_consecutive_failures=20):
     """Chạy `extractor(path) -> str` cho từng ảnh, lưu {image_key: text} ra JSON.
-    Chạy tiếp được nếu bị ngắt (bỏ qua ảnh đã có trong file), lưu định kỳ mỗi `save_every` ảnh."""
+    Chạy tiếp được nếu bị ngắt (bỏ qua ảnh đã có trong file), lưu định kỳ mỗi `save_every` ảnh.
+
+    Ảnh lỗi KHÔNG được ghi vào cache (chuỗi rỗng chỉ có nghĩa "ảnh không có text"), nên lần chạy sau
+    sẽ thử lại. Lỗi `max_consecutive_failures` ảnh liên tiếp thì dừng hẳn: đó là lỗi môi trường
+    (hết VRAM, thiếu thư viện, model hỏng), chạy tiếp chỉ tạo ra cache thiếu."""
     out_path = Path(out_path)
     cache = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}
     todo = [p for p in image_paths if image_key(p.parent, p.name) not in cache]
     logger.info("%s: %d ảnh đã có trong cache, còn %d ảnh", desc, len(image_paths) - len(todo), len(todo))
 
+    failed, streak = [], 0
     for i, p in enumerate(tqdm(todo, desc=desc)):
         try:
             cache[image_key(p.parent, p.name)] = extractor(p)
+            streak = 0
         except Exception as e:  # noqa: BLE001 - một ảnh lỗi không nên dừng cả tiến trình
-            logger.warning("%s lỗi ở %s: %s", desc, p, e)
-            cache[image_key(p.parent, p.name)] = ""
+            logger.warning("%s lỗi ở %s: %r", desc, p, e)
+            failed.append(p)
+            streak += 1
+            if streak >= max_consecutive_failures:
+                _write_json(out_path, cache)
+                raise RuntimeError(f"{desc}: {streak} ảnh lỗi liên tiếp, dừng lại. Lỗi cuối: {e!r}") from e
         if (i + 1) % save_every == 0:
             _write_json(out_path, cache)
     _write_json(out_path, cache)
+    if failed:
+        logger.warning("%s: %d/%d ảnh lỗi, chưa có trong cache (chạy lại để thử lại)", desc, len(failed), len(todo))
     return cache
 
 

@@ -25,7 +25,8 @@ def load_records(json_path, image_dir, label2id, image_texts=None):
         raw = json.load(f)
     items = raw.items() if isinstance(raw, dict) else ((str(i), r) for i, r in enumerate(raw))
 
-    records = []
+    image_texts = image_texts or {}
+    records, missing = [], Counter()
     for sid, r in items:
         label = r.get("label")
         rec = {
@@ -34,9 +35,20 @@ def load_records(json_path, image_dir, label2id, image_texts=None):
             "caption": r.get("caption", ""),
             "label": label2id[label] if label is not None else IGNORE_LABEL,
         }
-        for field, cache in (image_texts or {}).items():
-            rec[field] = cache.get(image_key(image_dir, r["image"]), "")
+        key = image_key(image_dir, r["image"])
+        for field, cache in image_texts.items():
+            missing[field] += key not in cache
+            rec[field] = cache.get(key, "")
         records.append(rec)
+
+    # ảnh không có trong cache khác với ảnh có text rỗng: thiếu nghĩa là chưa chạy (hoặc chạy lỗi) bước trích xuất
+    for field, n in missing.items():
+        if n and n == len(records):
+            raise ValueError(f"cache '{field}' không có ảnh nào của {json_path} (thư mục ảnh {Path(image_dir).name}): "
+                             "chạy scripts/extract_image_text.py cho split này hoặc kiểm tra data.image_text.dir")
+        if n:
+            logger.warning("cache '%s' thiếu %d/%d ảnh của %s, các mẫu này không có text từ ảnh",
+                           field, n, len(records), json_path)
     return records
 
 
