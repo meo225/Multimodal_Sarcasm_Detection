@@ -1,6 +1,9 @@
 # data & checkpoint không commit (xem CODEBASE.md mục 5)
 data/raw/*
 data/processed/*
+data/processed_v1/*
+data/processed_v2/*
+notebooks/logs/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 outputs/

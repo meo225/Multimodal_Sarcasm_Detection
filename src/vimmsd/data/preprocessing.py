@@ -100,6 +100,12 @@ def handle_emoji(text: str, mode: str) -> str:
     raise ValueError(f"Chế độ emoji không hợp lệ: {mode}")
 
 
+def extract_emojis(text: str) -> list[str]:
+    """Return emojis in source order, preserving repeated occurrences."""
+    import emoji
+    return [item["emoji"] for item in emoji.emoji_list(text or "")]
+
+
 @lru_cache(maxsize=1)
 def _word_tokenize():
     from underthesea import word_tokenize
@@ -140,7 +146,8 @@ def clean_text(
 class TextPreprocessor:
     """Xử lý hàng loạt và lưu trữ kết quả tiền xử lý văn bản ra đĩa đệm."""
 
-    def __init__(self, lowercase=False, normalize_teencode=True, emoji="demojize", word_segment=True):
+    def __init__(self, lowercase=False, normalize_teencode=True, emoji="demojize", word_segment=True, include_emoji_explanation=False):
+        self.include_emoji_explanation = include_emoji_explanation
         self.kwargs = dict(
             lowercase=lowercase,
             normalize_teencode_=normalize_teencode,
@@ -173,3 +180,16 @@ class TextPreprocessor:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             cache_file.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
         return [cache[t] for t in texts]
+
+    def process_record(self, record: dict, emoji_explanation_text: str = "") -> dict:
+        processed = dict(record)
+        processed["caption_processed"] = self(record.get("caption", ""))
+        if self.include_emoji_explanation:
+            processed["emoji_explanation"] = emoji_explanation_text.strip()
+        return processed
+
+    def process_records(self, records, emoji_annotations=None):
+        annotations = emoji_annotations or {}
+        if isinstance(records, dict):
+            return {key: self.process_record(value, annotations.get(str(key), "")) for key, value in records.items()}
+        return [self.process_record(value, annotations.get(str(index), "")) for index, value in enumerate(records)]
