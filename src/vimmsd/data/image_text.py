@@ -10,8 +10,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
 from tqdm.auto import tqdm
+
+from vimmsd.data.image_io import open_image_rgb
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +74,8 @@ class OCRExtractor:
         self.pad = pad
 
     def __call__(self, image_path) -> str:
-        image = Image.open(image_path)
-        image.seek(0)  # ảnh GIF: lấy frame đầu
-        image = image.convert("RGB")
+        # cùng cách đọc với đường A: frame đầu, sửa hướng EXIF, nền trắng cho vùng trong suốt
+        image = open_image_rgb(image_path)
         # đưa mảng BGR thay vì đường dẫn: detector và bước crop dùng chung một ảnh (cùng frame, cùng chiều xoay)
         bgr = np.ascontiguousarray(np.asarray(image)[:, :, ::-1])
         polys = [np.asarray(p) for r in self.detector.predict(bgr) for p in r["dt_polys"]]
@@ -85,7 +85,8 @@ class OCRExtractor:
         crops = [image.crop((max(0, x0 - self.pad), max(0, y0 - self.pad), x1 + self.pad, y1 + self.pad))
                  for x0, y0, x1, y1 in boxes]
         texts, scores = self.recognizer.predict_batch(crops, return_prob=True)
-        return " ".join(t.strip() for t, s in zip(texts, scores) if s >= self.min_score and t.strip())
+        # mỗi dòng một hàng, để bước làm sạch OCR (preprocessing.clean_ocr) lọc được từng dòng rác
+        return "\n".join(t.strip() for t, s in zip(texts, scores) if s >= self.min_score and t.strip())
 
 
 VINTERN_MEAN, VINTERN_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -108,7 +109,7 @@ def vintern_pixel_values(image_path, dtype=torch.bfloat16, size=448):
         transforms.ToTensor(),
         transforms.Normalize(VINTERN_MEAN, VINTERN_STD),
     ])
-    return transform(Image.open(image_path).convert("RGB"))[None].to(dtype).cuda()
+    return transform(open_image_rgb(image_path))[None].to(dtype).cuda()
 
 
 class VLMDescriber:
@@ -143,7 +144,7 @@ class VLMDescriber:
             return out.strip()
         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": self.prompt}]}]
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-        image = Image.open(image_path).convert("RGB")
+        image = open_image_rgb(image_path)
         inputs = self.processor(text=[prompt], images=[image], return_tensors="pt").to(self.model.device)
         out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
         return self.processor.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()

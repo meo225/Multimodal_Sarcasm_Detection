@@ -104,7 +104,7 @@ IE403/
 | Module | Dùng ở tuần | Mô tả |
 |---|---|---|
 | `data/preprocessing.py`, `data/dataset.py` | Tuần 1-2 | Load raw data, tách từ, chuẩn hóa, resize ảnh, trả về tensor sẵn sàng cho model |
-| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr.json`, `vlm_description.json`; bật bằng `data.image_text` trong config |
+| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr_v1.json`, `vlm_description_v1.json` (đặt tên theo phiên bản, đổi model/prompt thì tăng số); bật bằng `data.image_text` trong config |
 | `models/text_encoder.py`, `models/image_encoder.py` | Tuần 3 | Wrapper PhoBERT/CLIP dùng độc lập cho baseline |
 | `models/fusion.py`, `models/classifier.py` | Tuần 4-5 | `ConcatFusion` (Tuần 4), `CrossAttentionFusion` (Tuần 5) — cùng interface để dễ swap trong config |
 | `training/losses.py` | Tuần 5 | `FocalLoss`, weighted CrossEntropy cho lớp hiếm `text-sarcasm` |
@@ -270,7 +270,8 @@ where = ["src"]
 torch
 torchvision
 transformers>=4.45
-underthesea          # tách từ tiếng Việt cho PhoBERT
+py_vncorenlp         # tách từ VnCoreNLP cho PhoBERT (cần Java >= 8)
+underthesea          # tách từ dự phòng (word_segment: underthesea)
 emoji                # xử lý emoji trong caption
 scikit-learn         # metrics
 pyyaml               # đọc config
@@ -291,9 +292,12 @@ CLIP được load qua `transformers` (`CLIPVisionModel`, checkpoint `openai/cli
 `requirements-kaggle.txt` (dùng trong cell bootstrap). Kaggle/Colab đã cài sẵn `torch`, `torchvision`, `transformers`, `scikit-learn`, `pandas`, `matplotlib`, `pyyaml`. **Không cài lại `torch`** vì dễ làm lệch phiên bản CUDA của môi trường:
 
 ```
+py_vncorenlp
 underthesea
 emoji
 ```
+
+Tách từ mặc định dùng VnCoreNLP (công cụ PhoBERT dùng khi pretrain), cần Java. Model tách từ tự tải về `~/.cache/vncorenlp` (đổi bằng biến môi trường `VNCORENLP_DIR`) ở lần chạy đầu.
 
 OCR gồm 2 bước: PaddleOCR phát hiện vùng chữ, VietOCR nhận dạng từng dòng (model nhận dạng của PaddleOCR thiếu các chữ cái mang dấu thanh tiếng Việt). `vietocr` ghim `pillow`/`einops`/`gdown` bản cũ nên không nằm trong `requirements.txt`, cài riêng bằng `pip install --no-deps vietocr`.
 

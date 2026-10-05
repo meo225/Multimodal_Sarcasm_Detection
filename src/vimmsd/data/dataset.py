@@ -7,10 +7,12 @@ import torch
 from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
+from torchvision import transforms
 
 from vimmsd.data.augmentation import build_image_augment
+from vimmsd.data.image_io import PadToSquare, encoder_mean_color, open_image_rgb
 from vimmsd.data.image_text import compose_image_text, image_key
-from vimmsd.data.preprocessing import TextPreprocessor
+from vimmsd.data.preprocessing import TextPreprocessor, clean_ocr
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +71,15 @@ def split_records(records, val_ratio, test_ratio, seed):
 
 class ViMMSDDataset(Dataset):
     def __init__(self, records, text_preprocessor=None, image_transform=None,
-                 load_image=True, cache_dir=None, use_image_text=False):
+                 load_image=True, cache_dir=None, use_image_text=False, missing_image_color=(0, 0, 0)):
         self.records = records
         self.image_transform = image_transform
         self.load_image = load_image
+        self.missing_image_color = tuple(missing_image_color)
 
         captions = [r["caption"] for r in records]
-        image_texts = [compose_image_text(r.get("ocr", ""), r.get("description", "")) for r in records]
+        image_texts = [compose_image_text(clean_ocr(r.get("ocr", ""), r["caption"]), r.get("description", ""))
+                       for r in records]
         if text_preprocessor is not None:
             captions = text_preprocessor.process_all(captions, cache_dir=cache_dir)
             if use_image_text:
@@ -92,15 +96,15 @@ class ViMMSDDataset(Dataset):
         return [r["label"] for r in self.records]
 
     def _open_image(self, path):
+        """Trả về (ảnh, có lỗi hay không). Ảnh lỗi được thay bằng ảnh một màu `missing_image_color`
+        (mean của encoder, sau normalize gần 0) và đánh cờ `img_missing` để đếm được số mẫu bị ảnh hưởng."""
         try:
-            img = Image.open(path)
-            img.seek(0)  # ảnh GIF: lấy frame đầu
-            return img.convert("RGB")
+            return open_image_rgb(path), False
         except (OSError, ValueError) as e:
             self._bad_images += 1
             if self._bad_images <= 5:
-                logger.warning("không đọc được ảnh %s (%s), thay bằng ảnh đen", path, e)
-            return Image.new("RGB", (224, 224))
+                logger.warning("không đọc được ảnh %s (%s), thay bằng ảnh một màu và đặt img_missing=1", path, e)
+            return Image.new("RGB", (224, 224), self.missing_image_color), True
 
     def __getitem__(self, idx):
         rec = self.records[idx]
@@ -108,20 +112,32 @@ class ViMMSDDataset(Dataset):
         if self.image_texts is not None:
             item["image_text"] = self.image_texts[idx]
         if self.load_image:
-            img = self._open_image(rec["image_path"])
+            img, missing = self._open_image(rec["image_path"])
             if self.image_transform is not None:
                 img = self.image_transform(img)
             item["image"] = img
+            item["img_missing"] = int(missing)
         return item
 
 
 class ViMMSDCollator:
-    """Tokenize text + xử lý ảnh theo batch (padding động theo câu dài nhất trong batch)."""
+    """Tokenize text + xử lý ảnh theo batch (padding động theo câu dài nhất trong batch).
 
-    def __init__(self, tokenizer=None, image_processor=None, max_length=128):
+    Khi có text từ ảnh (2 segment), caption được cắt trước còn tối đa `max_caption_length` token, phần còn
+    thiếu chỗ chỉ cắt ở segment 2 (`only_second`). Không dùng `only_second` một mình: nếu riêng caption đã
+    dài hơn `max_length`, tokenizer không cắt gì và trả về chuỗi dài hơn giới hạn của PhoBERT."""
+
+    def __init__(self, tokenizer=None, image_processor=None, max_length=128, max_caption_length=None):
         self.tokenizer = tokenizer
         self.image_processor = image_processor
         self.max_length = max_length
+        self.max_caption_length = max_caption_length or max_length
+
+    def _clip_caption(self, text):
+        # only_second chỉ cắt được khi segment 2 dài hơn số token cần bỏ, tức caption + token đặc biệt < max_length
+        limit = min(self.max_caption_length, self.max_length - self.tokenizer.num_special_tokens_to_add(pair=True) - 1)
+        tokens = self.tokenizer.tokenize(text)
+        return text if len(tokens) <= limit else self.tokenizer.convert_tokens_to_string(tokens[:limit])
 
     def __call__(self, items):
         batch = {
@@ -132,8 +148,8 @@ class ViMMSDCollator:
             texts = [it["text"] for it in items]
             if "image_text" in items[0]:
                 # 2 segment: <s> caption </s></s> chữ trong ảnh + mô tả ảnh </s>
-                enc = self.tokenizer(texts, [it["image_text"] for it in items], padding=True,
-                                     truncation="longest_first", max_length=self.max_length,
+                enc = self.tokenizer([self._clip_caption(t) for t in texts], [it["image_text"] for it in items],
+                                     padding=True, truncation="only_second", max_length=self.max_length,
                                      return_tensors="pt")
             else:
                 enc = self.tokenizer(texts, padding=True, truncation=True,
@@ -143,6 +159,8 @@ class ViMMSDCollator:
         if self.image_processor is not None:
             images = [it["image"] for it in items]
             batch["pixel_values"] = self.image_processor(images=images, return_tensors="pt")["pixel_values"]
+        if "img_missing" in items[0]:
+            batch["img_missing"] = torch.tensor([it["img_missing"] for it in items], dtype=torch.long)
         return batch
 
 
@@ -184,21 +202,36 @@ def load_all_records(cfg):
     return splits
 
 
+def build_image_transform(cfg, train, fill):
+    """Đường A trước image processor: pad vuông (A2, mặc định) rồi augment nhẹ (A3, chỉ khi train).
+    `data.image_resize: crop` bỏ bước pad, để processor center-crop như code cũ (dùng cho ablation)."""
+    mode = cfg.data.get("image_resize", "pad")
+    if mode not in ("pad", "crop"):
+        raise ValueError(f"data.image_resize không hợp lệ: {mode!r}, chọn pad | crop")
+    steps = [PadToSquare(fill)] if mode == "pad" else []
+    augment = build_image_augment(cfg.data.get("image_augment", False)) if train else None
+    if augment is not None:
+        steps.append(augment)
+    return transforms.Compose(steps) if steps else None
+
+
 def build_datasets(cfg, needs_text=True, needs_image=True, splits=("train", "val", "test")):
     records = load_all_records(cfg)
     text_pre = TextPreprocessor.from_config(cfg.data.text) if needs_text else None
+    # màu viền khi pad và màu ảnh thay thế ảnh lỗi: mean của encoder, sau normalize gần 0
+    fill = encoder_mean_color(cfg.model.image_encoder.name) if needs_image else (0, 0, 0)
     datasets = {}
     for split in splits:
         if split not in records:
             continue
-        augment = build_image_augment(cfg.data.get("image_augment", False)) if split == "train" else None
         datasets[split] = ViMMSDDataset(
             records[split],
             text_preprocessor=text_pre,
-            image_transform=augment,
+            image_transform=build_image_transform(cfg, split == "train", fill) if needs_image else None,
             load_image=needs_image,
             cache_dir=cfg.paths.get("cache_dir"),
             use_image_text=uses_image_text(cfg) and needs_text,
+            missing_image_color=fill,
         )
     return datasets
 
