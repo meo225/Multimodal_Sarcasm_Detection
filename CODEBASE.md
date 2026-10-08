@@ -104,7 +104,7 @@ IE403/
 | Module | Dùng ở tuần | Mô tả |
 |---|---|---|
 | `data/preprocessing.py`, `data/dataset.py` | Tuần 1-2 | Load raw data, tách từ, chuẩn hóa, resize ảnh, trả về tensor sẵn sàng cho model |
-| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr_v1.json`, `vlm_description_v1.json` (đặt tên theo phiên bản, đổi model/prompt thì tăng số); bật bằng `data.image_text` trong config |
+| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr_v2.json`, `vlm_description_v1.json` (đặt tên theo phiên bản, đổi model/prompt thì tăng số); bật bằng `data.image_text` trong config |
 | `models/text_encoder.py`, `models/image_encoder.py` | Tuần 3 | Wrapper PhoBERT/CLIP dùng độc lập cho baseline |
 | `models/fusion.py`, `models/classifier.py` | Tuần 4-5 | `ConcatFusion` (Tuần 4), `CrossAttentionFusion` (Tuần 5) — cùng interface để dễ swap trong config |
 | `training/losses.py` | Tuần 5 | `FocalLoss`, weighted CrossEntropy cho lớp hiếm `text-sarcasm` |

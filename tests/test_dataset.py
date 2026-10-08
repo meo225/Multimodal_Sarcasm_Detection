@@ -417,3 +417,45 @@ def test_broken_image_is_flagged(fake_data):
     assert ds[1]["img_missing"] == 1 and ds[1]["image"].getpixel((0, 0)) == (1, 2, 3)
     batch = ViMMSDCollator(None, StubImageProcessor())([ds[0], ds[1]])
     assert batch["img_missing"].tolist() == [0, 1]
+
+
+def test_image_text_cache_batches_and_isolates_failures(tmp_path):
+    from vimmsd.data.image_text import build_image_text_cache, list_images
+
+    img_dir = tmp_path / "train-images"
+    img_dir.mkdir()
+    for i in range(5):
+        Image.new("RGB", (8, 8)).save(img_dir / f"{i}.jpg")
+
+    class FakeOCR:
+        def __init__(self):
+            self.batches = []
+
+        def extract_many(self, paths):
+            self.batches.append([p.name for p in paths])
+            if any(p.name == "3.jpg" for p in paths):
+                raise RuntimeError("ảnh lỗi trong nhóm")
+            return [f"text {p.stem}" for p in paths]
+
+        def __call__(self, path):
+            if path.name == "3.jpg":
+                raise RuntimeError("ảnh lỗi")
+            return f"text {path.stem}"
+
+    ocr = FakeOCR()
+    out = tmp_path / "cache" / "ocr.json"
+    cache = build_image_text_cache(list_images([img_dir]), out, ocr, batch_size=2, save_every=1)
+    assert ocr.batches == [["0.jpg", "1.jpg"], ["2.jpg", "3.jpg"], ["4.jpg"]]
+    # nhóm có ảnh lỗi được chạy lại từng ảnh: chỉ ảnh lỗi bị bỏ qua
+    assert cache == {f"train-images/{i}.jpg": f"text {i}" for i in (0, 1, 2, 4)}
+
+
+def test_shard_cache_merge(tmp_path):
+    from vimmsd.data.image_text import merge_image_text_caches, shard_cache_name
+
+    assert shard_cache_name("ocr_v2.json", 1, 2) == "ocr_v2.shard1of2.json"
+    (tmp_path / "ocr_v2.json").write_text(json.dumps({"a/0.jpg": "cũ"}), encoding="utf-8")
+    for k, data in enumerate([{"a/1.jpg": "x"}, {"a/2.jpg": "y"}]):
+        (tmp_path / shard_cache_name("ocr_v2.json", k, 2)).write_text(json.dumps(data), encoding="utf-8")
+    merged = merge_image_text_caches(tmp_path / "ocr_v2.json", sorted(tmp_path.glob("ocr_v2.shard*.json")))
+    assert merged == {"a/0.jpg": "cũ", "a/1.jpg": "x", "a/2.jpg": "y"}

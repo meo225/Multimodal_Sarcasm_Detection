@@ -44,7 +44,7 @@ data:
     use_description: false
     dir: null                           # null = paths.cache_dir; Kaggle: thư mục output notebook 01b đã attach
     # đặt tên theo phiên bản: đổi model/prompt thì tăng số, không ghi đè cache cũ
-    ocr_cache: ocr_v1.json                     # PaddleOCR + VietOCR, mỗi dòng một hàng
+    ocr_cache: ocr_v2.json                     # PaddleOCR phát hiện + VietOCR vgg_seq2seq, mỗi dòng một hàng
     description_cache: vlm_description_v1.json # Vintern-1B, prompt mô tả trung tính
 
 model:
