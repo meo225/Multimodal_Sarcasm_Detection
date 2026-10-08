@@ -135,7 +135,7 @@ class ViMMSDCollator:
 
 
 def text_cache_dir(cfg):
-    """Thư mục chứa text_cache_*.json. None trong config thì dùng paths.cache_dir."""
+    """Thư mục chứa 01a_text_preprocessing.json. None trong config thì dùng paths.cache_dir."""
     text_cfg = cfg.data.get("text") or {}
     return text_cfg.get("cache_dir") or cfg.paths.get("cache_dir")
 
@@ -162,7 +162,7 @@ def collect_captions(cfg):
 
 
 def build_text_cache(cfg):
-    """Chuẩn hóa toàn bộ caption và ghi text_cache_*.json vào paths.cache_dir.
+    """Chuẩn hóa toàn bộ caption và ghi 01a_text_preprocessing.json vào paths.cache_dir.
 
     Notebook train đọc lại file này qua TextPreprocessor.process_all, nên không xử lý lại từ đầu.
     """

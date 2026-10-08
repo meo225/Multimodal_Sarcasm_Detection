@@ -1,4 +1,3 @@
-import hashlib
 import html
 import json
 import re
@@ -166,8 +165,7 @@ class TextPreprocessor:
         return clean_text(text, **self.kwargs)
 
     def _cache_file(self, cache_dir):
-        key = hashlib.md5(json.dumps(self.kwargs, sort_keys=True).encode()).hexdigest()[:8]
-        return Path(cache_dir) / f"text_cache_{key}.json"
+        return Path(cache_dir) / "01a_text_preprocessing.json"
 
     def process_all(self, texts, cache_dir=None):
         cache = {}

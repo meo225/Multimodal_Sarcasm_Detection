@@ -157,7 +157,7 @@ def test_batch_shapes(fake_data):
     pre = TextPreprocessor(emoji="keep", word_segment=False)
     ds = ViMMSDDataset(records, text_preprocessor=pre, cache_dir=fake_data / "cache")
     assert "không" in ds.texts[0] and "#" not in ds.texts[0]
-    assert list((fake_data / "cache").glob("text_cache_*.json"))
+    assert (fake_data / "cache" / "01a_text_preprocessing.json").exists()
 
     batch = ViMMSDCollator(StubTokenizer(), StubImageProcessor())([ds[i] for i in range(8)])
     assert batch["input_ids"].shape == batch["attention_mask"].shape
