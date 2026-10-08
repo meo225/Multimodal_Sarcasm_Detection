@@ -178,7 +178,7 @@ def get_github_token():
 
 ON_CLOUD = bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE")) or "COLAB_RELEASE_TAG" in os.environ
 if ON_CLOUD:
-    if "COLAB_RELEASE_TAG" in os.environ:
+    if "COLAB_RELEASE_TAG" in os.environ and not os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):  # ảnh Kaggle dựng từ ảnh Colab nên cũng có biến này
         from google.colab import drive
         drive.mount("/content/drive")
     token = get_github_token()
