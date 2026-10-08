@@ -111,15 +111,31 @@ class OCRExtractor:
 VINTERN_MEAN, VINTERN_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
 
-def load_vintern(model_name="5CD-AI/Vintern-1B-v3_5", dtype=torch.bfloat16):
+def vlm_dtype():
+    """bfloat16 chỉ chạy nhanh trên GPU từ Ampere (compute capability >= 8). T4 trên Kaggle là 7.5: dùng float16."""
+    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
+        return torch.bfloat16
+    return torch.float16
+
+
+def _dtype_kwargs(dtype):
+    # transformers >= 4.56 đổi tham số `torch_dtype` thành `dtype` (bản 5.x có thể bỏ hẳn tên cũ)
+    import transformers
+    from packaging.version import Version
+
+    return {"dtype" if Version(transformers.__version__) >= Version("4.56") else "torch_dtype": dtype}
+
+
+def load_vintern(model_name="5CD-AI/Vintern-1B-v3_5", dtype=None):
     from transformers import AutoModel, AutoTokenizer
 
-    model = AutoModel.from_pretrained(model_name, torch_dtype=dtype, trust_remote_code=True).eval().cuda()
+    dtype = dtype or vlm_dtype()
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, **_dtype_kwargs(dtype)).eval().cuda()
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=False)
     return model, tokenizer
 
 
-def vintern_pixel_values(image_path, dtype=torch.bfloat16, size=448):
+def vintern_pixel_values(image_path, dtype=torch.float16, size=448):
     """1 tile 448x448 thay cho dynamic tiling của InternVL: đơn giản, ít VRAM, đủ cho mô tả tổng quát."""
     from torchvision import transforms
 
@@ -134,22 +150,27 @@ def vintern_pixel_values(image_path, dtype=torch.bfloat16, size=448):
 class VLMDescriber:
     """Sinh mô tả ảnh bằng VLM.
 
-    backend="vintern": Vintern (5CD-AI), tối ưu cho tiếng Việt, 1B tham số chạy được trên T4.
-    backend="hf": VLM chuẩn chat template của transformers (ví dụ Qwen/Qwen2.5-VL-3B-Instruct)."""
+    backend="vintern": Vintern (5CD-AI), tối ưu cho tiếng Việt, 1B tham số. Dùng code riêng của model
+        (trust_remote_code), có thể không tương thích với bản transformers mới.
+    backend="hf": VLM được transformers hỗ trợ sẵn (mặc định Qwen/Qwen2.5-VL-3B-Instruct), không cần code riêng.
+    Ảnh đưa vào giới hạn khoảng 448x448 pixel để mô tả tổng quát nhanh và ít VRAM."""
 
-    def __init__(self, backend="vintern", model_name=None, prompt=DESCRIBE_PROMPT, max_new_tokens=96):
+    def __init__(self, backend="vintern", model_name=None, prompt=DESCRIBE_PROMPT, max_new_tokens=96,
+                 max_pixels=448 * 448):
         self.backend = backend
         self.prompt = prompt
         self.max_new_tokens = max_new_tokens
+        self.dtype = vlm_dtype()
         if backend == "vintern":
-            self.model, self.tokenizer = load_vintern(model_name or "5CD-AI/Vintern-1B-v3_5")
+            self.model, self.tokenizer = load_vintern(model_name or "5CD-AI/Vintern-1B-v3_5", self.dtype)
         elif backend == "hf":
             from transformers import AutoModelForImageTextToText, AutoProcessor
 
             model_name = model_name or "Qwen/Qwen2.5-VL-3B-Instruct"
-            self.processor = AutoProcessor.from_pretrained(model_name)
+            # Qwen2.5-VL: số token ảnh tỉ lệ với số pixel, giới hạn max_pixels để không chậm với ảnh lớn
+            self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=128 * 28 * 28, max_pixels=max_pixels)
             self.model = AutoModelForImageTextToText.from_pretrained(
-                model_name, torch_dtype=torch.bfloat16, device_map="auto"
+                model_name, device_map="cuda", **_dtype_kwargs(self.dtype)
             ).eval()
         else:
             raise ValueError(f"backend không hợp lệ: {backend}")
@@ -158,8 +179,8 @@ class VLMDescriber:
     def __call__(self, image_path) -> str:
         if self.backend == "vintern":
             generation = dict(max_new_tokens=self.max_new_tokens, do_sample=False, repetition_penalty=1.3)
-            out = self.model.chat(self.tokenizer, vintern_pixel_values(image_path), "<image>\n" + self.prompt,
-                                  generation)
+            pixel_values = vintern_pixel_values(image_path, dtype=self.dtype)
+            out = self.model.chat(self.tokenizer, pixel_values, "<image>\n" + self.prompt, generation)
             return out.strip()
         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": self.prompt}]}]
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
