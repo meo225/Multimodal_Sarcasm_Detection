@@ -33,6 +33,7 @@ data:
     normalize_teencode: true
     emoji: demojize   # keep | remove | demojize
     word_segment: true
+    cache_dir: null   # null = paths.cache_dir. Notebook train trên Kaggle: /kaggle/input/<output 01a>/cache
   image_augment: false
   sampler: random     # random | weighted (oversampling lớp hiếm)
   # Tiền xử lý ảnh thành text (tạo trước bằng scripts/extract_image_text.py, xem notebooks/01b):

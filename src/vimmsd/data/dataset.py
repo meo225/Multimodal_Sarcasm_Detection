@@ -134,6 +134,45 @@ class ViMMSDCollator:
         return batch
 
 
+def text_cache_dir(cfg):
+    """Thư mục chứa text_cache_*.json. None trong config thì dùng paths.cache_dir."""
+    text_cfg = cfg.data.get("text") or {}
+    return text_cfg.get("cache_dir") or cfg.paths.get("cache_dir")
+
+
+def collect_captions(cfg):
+    """Mọi caption trong train / public test / private test. File không có thì bỏ qua."""
+    data_dir = Path(cfg.paths.data_dir)
+    names = [cfg.data.train_json]
+    for key in ("public_test_json", "private_test_json"):
+        name = cfg.data.get(key)
+        if name:
+            names.append(name)
+    captions, used = [], []
+    for name in names:
+        path = data_dir / name
+        if not path.exists():
+            logger.warning("bỏ qua %s: không thấy file", path)
+            continue
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        items = raw.values() if isinstance(raw, dict) else raw
+        captions.extend(str(item.get("caption", "")) for item in items)
+        used.append(name)
+    return captions, used
+
+
+def build_text_cache(cfg):
+    """Chuẩn hóa toàn bộ caption và ghi text_cache_*.json vào paths.cache_dir.
+
+    Notebook train đọc lại file này qua TextPreprocessor.process_all, nên không xử lý lại từ đầu.
+    """
+    pre = TextPreprocessor.from_config(cfg.data.text)
+    out_dir = Path(cfg.paths.cache_dir)
+    captions, used = collect_captions(cfg)
+    pre.process_all(captions, cache_dir=out_dir)
+    return pre._cache_file(out_dir), len(captions), used
+
+
 def load_image_texts(cfg):
     """Đọc cache OCR / mô tả VLM theo `data.image_text` trong config. Trả về {} nếu không dùng."""
     it_cfg = cfg.data.get("image_text") or {}
@@ -185,7 +224,7 @@ def build_datasets(cfg, needs_text=True, needs_image=True, splits=("train", "val
             text_preprocessor=text_pre,
             image_transform=augment,
             load_image=needs_image,
-            cache_dir=cfg.paths.get("cache_dir"),
+            cache_dir=text_cache_dir(cfg),
             use_image_text=uses_image_text(cfg) and needs_text,
         )
     return datasets

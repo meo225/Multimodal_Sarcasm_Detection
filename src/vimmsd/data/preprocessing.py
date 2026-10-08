@@ -157,7 +157,10 @@ class TextPreprocessor:
 
     @classmethod
     def from_config(cls, text_cfg):
-        return cls(**dict(text_cfg))
+        raw = dict(text_cfg)
+        # cache_dir là đường dẫn file cache, không phải tham số chuẩn hóa câu
+        allowed = {"lowercase", "normalize_teencode", "emoji", "word_segment", "include_emoji_explanation"}
+        return cls(**{k: raw[k] for k in allowed if k in raw})
 
     def __call__(self, text: str) -> str:
         return clean_text(text, **self.kwargs)
@@ -178,7 +181,7 @@ class TextPreprocessor:
 
         if cache_file and missing:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+            cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
         return [cache[t] for t in texts]
 
     def process_record(self, record: dict, emoji_explanation_text: str = "") -> dict:

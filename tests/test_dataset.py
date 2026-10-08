@@ -115,6 +115,43 @@ def test_load_and_split(fake_data):
     assert not {r["id"] for r in train} & {r["id"] for r in test}
 
 
+def test_from_config_ignores_cache_dir():
+    cfg = load_config("configs/base.yaml")
+    pre = TextPreprocessor.from_config(cfg.data.text)
+    assert pre.kwargs["emoji_mode"] == "demojize"
+    pre = TextPreprocessor.from_config({
+        "emoji": "keep", "word_segment": False, "cache_dir": "attached/cache",
+    })
+    assert pre.kwargs["emoji_mode"] == "keep"
+    assert "cache_dir" not in pre.kwargs
+
+
+def test_build_text_cache_is_reused(fake_data):
+    from vimmsd.data.dataset import build_text_cache, text_cache_dir
+
+    cache = fake_data / "cache"
+    cfg = load_config("configs/base.yaml", overrides=[
+        f"paths.local.data_dir={fake_data}",
+        f"paths.local.cache_dir={cache}",
+        "data.train_json=train.json",
+        "data.public_test_json=missing-public.json",
+        "data.private_test_json=missing-private.json",
+        "data.text.word_segment=false",
+        "data.text.emoji=keep",
+    ], env="local")
+    assert text_cache_dir(cfg) == str(cache)
+    cache_file, n_captions, used = build_text_cache(cfg)
+    assert n_captions == 40 and used == ["train.json"] and cache_file.exists()
+
+    records = load_records(fake_data / "train.json", fake_data / "images", {l: i for i, l in enumerate(LABELS)})
+    ds = ViMMSDDataset(records, text_preprocessor=TextPreprocessor.from_config(cfg.data.text), cache_dir=cache)
+    assert "không" in ds.texts[0]
+    # lần sau chỉ đọc file, không ghi thêm key mới
+    before = cache_file.read_text(encoding="utf-8")
+    TextPreprocessor.from_config(cfg.data.text).process_all([r["caption"] for r in records], cache_dir=cache)
+    assert cache_file.read_text(encoding="utf-8") == before
+
+
 def test_batch_shapes(fake_data):
     records = load_records(fake_data / "train.json", fake_data / "images", {l: i for i, l in enumerate(LABELS)})
     pre = TextPreprocessor(emoji="keep", word_segment=False)
