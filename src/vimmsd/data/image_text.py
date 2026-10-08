@@ -176,18 +176,28 @@ class VLMDescriber:
             raise ValueError(f"backend không hợp lệ: {backend}")
 
     @torch.no_grad()
-    def __call__(self, image_path) -> str:
+    def extract_many(self, image_paths):
+        """Mô tả nhiều ảnh trong một lần sinh (batch), để GPU chạy đầy thay vì từng ảnh một."""
         if self.backend == "vintern":
             generation = dict(max_new_tokens=self.max_new_tokens, do_sample=False, repetition_penalty=1.3)
-            pixel_values = vintern_pixel_values(image_path, dtype=self.dtype)
-            out = self.model.chat(self.tokenizer, pixel_values, "<image>\n" + self.prompt, generation)
-            return out.strip()
+            # mỗi ảnh 1 tile 448x448, nên num_patches của từng ảnh là 1
+            pixel_values = torch.cat([vintern_pixel_values(p, dtype=self.dtype) for p in image_paths])
+            questions = ["<image>\n" + self.prompt] * len(image_paths)
+            outs = self.model.batch_chat(self.tokenizer, pixel_values, questions, generation,
+                                         num_patches_list=[1] * len(image_paths))
+            return [o.strip() for o in outs]
         messages = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": self.prompt}]}]
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-        image = open_image_rgb(image_path)
-        inputs = self.processor(text=[prompt], images=[image], return_tensors="pt").to(self.model.device)
+        self.processor.tokenizer.padding_side = "left"  # sinh theo batch cần pad bên trái
+        images = [open_image_rgb(p) for p in image_paths]
+        inputs = self.processor(text=[prompt] * len(images), images=images, padding=True,
+                                return_tensors="pt").to(self.model.device)
         out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False)
-        return self.processor.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
+        return [t.strip() for t in self.processor.batch_decode(out[:, inputs["input_ids"].shape[1]:],
+                                                               skip_special_tokens=True)]
+
+    def __call__(self, image_path) -> str:
+        return self.extract_many([image_path])[0]
 
 
 def list_images(image_dirs):

@@ -30,7 +30,7 @@ def main():
     parser.add_argument("--ocr-model", default="vgg_seq2seq", choices=["vgg_seq2seq", "vgg_transformer"],
                         help="model VietOCR: vgg_seq2seq nhanh hơn nhiều, vgg_transformer chính xác hơn một chút")
     parser.add_argument("--batch-size", type=int, default=16,
-                        help="số ảnh gộp mỗi lần nhận dạng chữ (chỉ cho --task ocr)")
+                        help="số ảnh xử lý mỗi lần (OCR: gộp dòng chữ để nhận dạng; VLM: sinh mô tả theo batch)")
     parser.add_argument("--num-shards", type=int, default=1,
                         help="chia ảnh thành N phần để chạy song song (mỗi GPU một tiến trình), mỗi phần một file cache")
     parser.add_argument("--shard", type=int, default=0, help="phần thứ mấy (0..N-1) mà tiến trình này chạy")
@@ -71,7 +71,7 @@ def main():
         out_name = shard_cache_name(out_name, args.shard, args.num_shards)
 
     cache = build_image_text_cache(paths, out_dir / out_name, extractor, desc=args.task,
-                                   batch_size=args.batch_size if args.task == "ocr" else 1)
+                                   batch_size=args.batch_size)
     keys = [image_key(p.parent, p.name) for p in paths]
     non_empty = sum(bool(cache.get(k)) for k in keys)
     missing = sum(k not in cache for k in keys)
