@@ -39,7 +39,7 @@ Thách thức chính của bài toán:
    - Văn bản: tách từ tiếng Việt, chuẩn hóa teencode/viết tắt, xử lý emoji.
    - Ảnh: resize, chuẩn hóa theo yêu cầu của encoder ảnh sử dụng.
    - Ảnh → text (chạy offline một lần cho toàn bộ ảnh, lưu cache):
-     - **OCR** (PaddleOCR): trích chữ xuất hiện trong ảnh. Nhiều mẫu `image-sarcasm`/`multi-sarcasm` là meme có chữ, nội dung mỉa mai nằm ngay trong chữ đó (xem `reports/dataset_report.md`).
+     - **OCR** (PaddleOCR phát hiện vùng chữ, VietOCR nhận dạng): trích chữ xuất hiện trong ảnh. Nhiều mẫu `image-sarcasm`/`multi-sarcasm` là meme có chữ, nội dung mỉa mai nằm ngay trong chữ đó (xem `reports/dataset_report.md`).
      - **Mô tả ảnh bằng VLM** (Vintern-1B, mô hình đa phương thức tiếng Việt): sinh 1–2 câu mô tả nội dung ảnh (ai/cái gì, hành động, bối cảnh, biểu cảm). Prompt trung tính, không nhắc tới mỉa mai, để không đưa phán đoán nhãn vào input.
      - Chữ trong ảnh và mô tả ảnh được ghép thành segment thứ hai của PhoBERT, cạnh caption, cho cả mô hình chỉ dùng text lẫn mô hình fusion.
 

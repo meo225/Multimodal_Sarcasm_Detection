@@ -1,4 +1,5 @@
 # Kaggle/Colab đã có sẵn torch, torchvision, transformers, scikit-learn, pandas,
 # matplotlib, pyyaml, pillow, tqdm. Không cài lại torch để tránh lệch phiên bản CUDA.
+py_vncorenlp    # cần Java: kiểm tra `java -version`, thiếu thì `apt-get install -y default-jre`
 underthesea
 emoji

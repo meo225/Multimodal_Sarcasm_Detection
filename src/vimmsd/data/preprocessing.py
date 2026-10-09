@@ -1,22 +1,32 @@
 import html
 import json
+import os
 import re
 import unicodedata
+import urllib.request
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
-# Bảng ánh xạ teencode và từ viết tắt tiếng Việt
+from vimmsd.data.emoji_vi import EMOJI_VI
+
+# Tăng mỗi khi sửa code làm sạch: là một phần của key cache, để không dùng lại kết quả của pipeline cũ.
+PREPROCESS_VERSION = 2
+
+# Bảng ánh xạ teencode và từ viết tắt tiếng Việt.
+# Đã bỏ các mục đa nghĩa hay thay nhầm từ chuẩn: "hổng" (lỗ hổng), "hăm" (hăm dọa), "thui" (tối thui),
+# "bít" (bít tắc), "uk" (nước Anh), "tg" (tác giả), "cr" (credit), "nt" (nhiều nghĩa).
 TEENCODE = {
     # Phủ định
     "ko": "không", "k": "không", "kh": "không", "khg": "không", "hok": "không",
-    "hem": "không", "hông": "không", "hổng": "không", "hơm": "không", "hăm": "không",
+    "hem": "không", "hông": "không", "hơm": "không",
     "khum": "không", "kô": "không", "chx": "chưa",
 
     # Động từ và trạng thái
     "dc": "được", "đc": "được",
-    "lm": "làm", "bít": "biết", "bik": "biết", "bjt": "biết",
+    "lm": "làm", "bik": "biết", "bjt": "biết",
     "đag": "đang", "dag": "đang", "thik": "thích", "thjk": "thích",
-    "iu": "yêu", "ib": "nhắn tin", "nt": "nhắn tin", "tl": "trả lời",
+    "iu": "yêu", "ib": "nhắn tin", "tl": "trả lời",
     "hỉu": "hiểu",
 
     # Danh từ và đại từ
@@ -24,7 +34,7 @@ TEENCODE = {
     "vs": "với", "zới": "với",
     "mn": "mọi người", "mng": "mọi người",
     "ng": "người", "mik": "mình", "mh": "mình",
-    "ae": "anh em", "ny": "người yêu", "cr": "crush", "gđ": "gia đình",
+    "ae": "anh em", "ny": "người yêu", "gđ": "gia đình",
     "cmt": "bình luận", "stt": "trạng thái",
     "acc": "tài khoản", "sđt": "số điện thoại",
 
@@ -39,19 +49,27 @@ TEENCODE = {
     "hnay": "hôm nay", "hqua": "hôm qua",
     "nma": "nhưng mà", "nhma": "nhưng mà",
     "bjo": "bây giờ",
-    "thui": "thôi", "lun": "luôn", "nx": "nữa",
+    "lun": "luôn", "nx": "nữa",
     "đou": "đâu", "đâuu": "đâu", "hẻ": "hả",
     "đr": "đúng rồi", "đug": "đúng",
-    "uk": "ừ", "uhm": "ừ", "ukm": "ừ",
+    "uhm": "ừ", "ukm": "ừ",
     "oki": "ok", "okie": "ok", "okela": "ok",
-    "klq": "không liên quan", "tg": "thời gian",
+    "klq": "không liên quan",
 }
+
+# Khóa ngắn trùng với chữ viết tắt hoặc tên riêng khi viết hoa toàn bộ (Gen Z, K-Pop, súng AK, KH):
+# chỉ thay khi không viết hoa toàn bộ. Các khóa khác thay cả khi viết hoa (KO, ĐC trong meme).
+CASE_SENSITIVE_TEENCODE = {"k", "z", "j", "ak", "kh", "lm", "ng"}
 
 URL_RE = re.compile(r"https?://\S+|www\.\S+")
 MENTION_RE = re.compile(r"@\w+")
 WORD_RE = re.compile(r"\w+", re.UNICODE)
 SPACE_RE = re.compile(r"\s+")
-INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\ufeff\xa0\u202a-\u202e]")
+# zero-width, BOM, ký tự định hướng: xóa hẳn, vì thay bằng khoảng trắng sẽ tách đôi từ ("kh​ông")
+INVISIBLE_CHARS_RE = re.compile(r"[​‌‍‎‏﻿‪-‮]")
+EMOJI_MODIFIERS_RE = re.compile("[️\U0001F3FB-\U0001F3FF]")  # variation selector, màu da
+
+SEGMENTERS = ("vncorenlp", "underthesea", "none")
 
 
 def normalize_unicode(text: str) -> str:
@@ -59,34 +77,55 @@ def normalize_unicode(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
 
+def remove_invisible_chars(text: str) -> str:
+    return INVISIBLE_CHARS_RE.sub("", text).replace("\xa0", " ")
+
+
 def _base_letter(ch: str) -> str:
     return unicodedata.normalize("NFD", ch)[0].lower()
 
 
-def collapse_repeats(text: str) -> str:
-    """Rút gọn chuỗi có từ 3 ký tự lặp liên tiếp cùng gốc chữ cái về một ký tự."""
+def _collapse_word(word: str) -> str:
     out, i = [], 0
-    while i < len(text):
-        ch = text[i]
+    while i < len(word):
+        ch = word[i]
         j = i + 1
-        if ch.isalpha():
+        if ch.isalpha() and ch.islower():
             base = _base_letter(ch)
-            while j < len(text) and text[j].isalpha() and _base_letter(text[j]) == base:
+            while j < len(word) and word[j].isalpha() and word[j].islower() and _base_letter(word[j]) == base:
                 j += 1
-        out.append(ch if j - i >= 3 else text[i:j])
+        out.append(ch if j - i >= 3 else word[i:j])
         i = j
     return "".join(out)
+
+
+def collapse_repeats(text: str) -> str:
+    """Rút gọn chuỗi từ 3 chữ cái thường lặp liên tiếp cùng gốc (bỏ qua dấu) về một chữ: "quáaaa" -> "quá".
+    Bỏ qua token viết hoa toàn bộ để giữ từ viết tắt (PCCC, CCCD, VIII); đánh đổi là "GOALLLL" cũng giữ nguyên."""
+    return WORD_RE.sub(lambda m: m.group(0) if m.group(0).isupper() else _collapse_word(m.group(0)), text)
 
 
 def normalize_teencode(text: str) -> str:
     def repl(m):
         w = m.group(0)
-        return TEENCODE.get(w.lower(), w)
+        key = w.lower()
+        if key in CASE_SENSITIVE_TEENCODE and w.isupper():
+            return w
+        return TEENCODE.get(key, w)
 
     return WORD_RE.sub(repl, text)
 
 
+def _emoji_to_vietnamese(chars, data):
+    meaning = EMOJI_VI.get(EMOJI_MODIFIERS_RE.sub("", chars))
+    if meaning is None:
+        meaning = data["en"].strip(":").replace("_", " ")
+    return f" {meaning} "
+
+
 def handle_emoji(text: str, mode: str) -> str:
+    """keep: giữ nguyên; remove: xóa; demojize: emoji trong EMOJI_VI thành nghĩa tiếng Việt,
+    emoji khác thành tên tiếng Anh. Xử lý cả chuỗi emoji ghép bằng ZWJ như một emoji."""
     if mode == "keep":
         return text
     import emoji
@@ -94,27 +133,85 @@ def handle_emoji(text: str, mode: str) -> str:
     if mode == "remove":
         return emoji.replace_emoji(text, replace=" ")
     if mode == "demojize":
-        text = emoji.demojize(text, delimiters=(" ", " "))
-        return text.replace("_", " ")
+        return emoji.replace_emoji(text, replace=_emoji_to_vietnamese)
     raise ValueError(f"Chế độ emoji không hợp lệ: {mode}")
 
 
-def extract_emojis(text: str) -> list[str]:
-    """Return emojis in source order, preserving repeated occurrences."""
+def extract_emojis(text: str) -> list:
+    """Danh sách emoji theo thứ tự xuất hiện, giữ cả các lần lặp. Emoji ghép bằng ZWJ tính là một emoji.
+    Dùng trên caption THÔ cho các đặc trưng đếm emoji (mục E0 trong ghi chú pipeline text)."""
     import emoji
+
     return [item["emoji"] for item in emoji.emoji_list(text or "")]
 
 
+def clean_ocr(ocr: str, caption: str = "", min_chars=3, max_similarity=0.9) -> str:
+    """Làm sạch chữ OCR trước khi ghép vào segment 2: bỏ dòng có dưới `min_chars` chữ/số hoặc không có chữ cái
+    nào (số lẻ, ký tự rác), và bỏ cả OCR nếu gần trùng caption (tỉ lệ giống nhau > `max_similarity`)."""
+    lines = []
+    for line in (ocr or "").splitlines():
+        line = line.strip()
+        alnum = [ch for ch in line if ch.isalnum()]
+        if len(alnum) >= min_chars and any(ch.isalpha() for ch in alnum):
+            lines.append(line)
+    text = " ".join(lines)
+    if text and caption and SequenceMatcher(None, text.lower(), caption.lower()).ratio() > max_similarity:
+        return ""
+    return text
+
+
+VNCORENLP_DIR = Path(os.environ.get("VNCORENLP_DIR", Path.home() / ".cache" / "vncorenlp"))
+VNCORENLP_URL = "https://raw.githubusercontent.com/vncorenlp/VnCoreNLP/master/"
+VNCORENLP_FILES = ("VnCoreNLP-1.2.jar", "models/wordsegmenter/vi-vocab", "models/wordsegmenter/wordsegmenter.rdr")
+
+
+
 @lru_cache(maxsize=1)
-def _word_tokenize():
+def _vncorenlp():
+    """RDRSegmenter của VnCoreNLP, công cụ tách từ PhoBERT dùng khi pretrain. Cần Java (JDK/JRE >= 8).
+    Chỉ tải jar và model tách từ (không tải POS/NER/parse như `py_vncorenlp.download_model`)."""
+    import py_vncorenlp
+
+    save_dir = VNCORENLP_DIR.resolve()
+    for name in VNCORENLP_FILES:
+        path = save_dir / name
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            urllib.request.urlretrieve(VNCORENLP_URL + name, path)
+    cwd = os.getcwd()
+    try:
+        return py_vncorenlp.VnCoreNLP(annotators=["wseg"], save_dir=str(save_dir))
+    finally:
+        os.chdir(cwd)  # py_vncorenlp chdir vào save_dir khi khởi tạo và không trả lại
+
+
+@lru_cache(maxsize=1)
+def _underthesea():
     from underthesea import word_tokenize
 
     return word_tokenize
 
 
-def word_segment(text: str) -> str:
-    # Tách từ tiếng Việt theo định dạng từ ghép nối bằng gạch dưới cho PhoBERT
-    return _word_tokenize()(text, format="text")
+def _resolve_segmenter(segmenter) -> str:
+    # tương thích ngược với config/notebook cũ dùng True/False
+    if segmenter is True:
+        return "vncorenlp"
+    if segmenter in (False, None):
+        return "none"
+    if segmenter not in SEGMENTERS:
+        raise ValueError(f"word_segment không hợp lệ: {segmenter!r}, chọn một trong {SEGMENTERS}")
+    return segmenter
+
+
+def word_segment(text: str, segmenter="vncorenlp") -> str:
+    """Tách từ, nối từ ghép bằng gạch dưới ("mạng_xã_hội"). PhoBERT dùng VnCoreNLP;
+    ViSoBERT pretrain trên văn bản thô nên dùng "none"."""
+    segmenter = _resolve_segmenter(segmenter)
+    if segmenter == "vncorenlp":
+        return " ".join(_vncorenlp().word_segment(text))
+    if segmenter == "underthesea":
+        return _underthesea()(text, format="text")
+    return text
 
 
 def clean_text(
@@ -122,36 +219,37 @@ def clean_text(
     lowercase: bool = False,
     normalize_teencode_: bool = True,
     emoji_mode: str = "demojize",
-    word_segment_: bool = True,
+    word_segment_="vncorenlp",
 ) -> str:
     text = html.unescape(text or "")
-    text = INVISIBLE_CHARS_RE.sub(" ", text)
     text = normalize_unicode(text)
+    # emoji trước bước xóa ký tự vô hình: ZWJ (U+200D) nối các emoji ghép như 🤦‍♂️
+    text = handle_emoji(text, emoji_mode)
+    text = remove_invisible_chars(text)
     text = URL_RE.sub(" ", text)
     text = MENTION_RE.sub(" ", text)
     text = text.replace("#", " ")
     text = collapse_repeats(text)
-    text = handle_emoji(text, emoji_mode)
-    if lowercase:
-        text = text.lower()
     if normalize_teencode_:
         text = normalize_teencode(text)
+    if lowercase:
+        text = text.lower()
     text = SPACE_RE.sub(" ", text).strip()
-    if word_segment_ and text:
-        text = word_segment(text)
+    if text:
+        text = word_segment(text, word_segment_)
     return text
 
 
 class TextPreprocessor:
     """Xử lý hàng loạt và lưu trữ kết quả tiền xử lý văn bản ra đĩa đệm."""
 
-    def __init__(self, lowercase=False, normalize_teencode=True, emoji="demojize", word_segment=True, include_emoji_explanation=False):
+    def __init__(self, lowercase=False, normalize_teencode=True, emoji="demojize", word_segment="vncorenlp", include_emoji_explanation=False):
         self.include_emoji_explanation = include_emoji_explanation
         self.kwargs = dict(
             lowercase=lowercase,
             normalize_teencode_=normalize_teencode,
             emoji_mode=emoji,
-            word_segment_=word_segment,
+            word_segment_=_resolve_segmenter(word_segment),
         )
 
     @classmethod

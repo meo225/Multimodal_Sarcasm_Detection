@@ -41,7 +41,8 @@ def main():
     datasets = build_datasets(cfg, needs_text, needs_image, splits=(args.split,))
     if args.split not in datasets:
         raise FileNotFoundError(f"không tìm thấy dữ liệu cho split {args.split}")
-    collator = ViMMSDCollator(model.tokenizer, model.image_processor, cfg.data.max_length)
+    collator = ViMMSDCollator(model.tokenizer, model.image_processor, cfg.data.max_length,
+                              cfg.data.get("max_caption_length"))
     loader = build_dataloaders(cfg, datasets, collator)[args.split]
     out = predict(model, loader, device, use_amp=cfg.train.amp and device.type == "cuda")
 

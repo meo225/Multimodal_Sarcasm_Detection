@@ -28,3 +28,10 @@ kaggle.json
 
 # docs
 docs/
+
+# other
+reports/dataset_report.html
+reports/environment_setup.md
+reports/environment_setup.pdf
+scripts/md_to_pdf.py
+cache_file/
