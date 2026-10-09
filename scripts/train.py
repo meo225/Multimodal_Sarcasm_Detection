@@ -51,7 +51,8 @@ def main():
     model = build_model(cfg)
     needs_text, needs_image = MODALITY_NEEDS[cfg.model.modality]
     datasets = build_datasets(cfg, needs_text, needs_image)
-    collator = ViMMSDCollator(model.tokenizer, model.image_processor, cfg.data.max_length)
+    collator = ViMMSDCollator(model.tokenizer, model.image_processor, cfg.data.max_length,
+                              cfg.data.get("max_caption_length"))
     loaders = build_dataloaders(cfg, datasets, collator)
     counts = class_counts(datasets["train"], len(cfg.data.labels))
     log.info("train %d | val %d | test %d | phân bố lớp train %s",

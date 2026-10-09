@@ -1,7 +1,8 @@
 torch
 torchvision
 transformers>=4.45
-underthesea          # tách từ tiếng Việt cho PhoBERT
+py_vncorenlp         # tách từ VnCoreNLP cho PhoBERT (cần Java >= 8)
+underthesea          # tách từ dự phòng (word_segment: underthesea)
 emoji                # xử lý emoji trong caption
 scikit-learn         # metrics
 pyyaml               # đọc config
@@ -9,7 +10,11 @@ pandas
 matplotlib
 pillow
 tqdm
-paddleocr            # Tuần 7
-paddlepaddle         # backend cho paddleocr (Tuần 7)
+paddleocr>=3.0       # phát hiện vùng chữ cho OCR ở bước tiền xử lý ảnh (notebook 01b)
+paddlepaddle         # backend cho paddleocr
+einops               # cần cho vietocr (và Vintern)
+gdown                # cần cho vietocr
+# vietocr (nhận dạng chữ tiếng Việt cho OCR) ghim pillow/einops/gdown bản cũ, nên cài riêng và bỏ qua dependency:
+#   pip install --no-deps vietocr
 kaggle               # download data qua API (chỉ dùng local)
 pytest

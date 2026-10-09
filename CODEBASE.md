@@ -46,7 +46,7 @@ IE403/
 │       ├── data/
 │       │   ├── dataset.py         # class ViMMSDDataset (PyTorch Dataset)
 │       │   ├── preprocessing.py   # word segmentation, chuẩn hóa text, resize/normalize ảnh
-│       │   ├── image_text.py      # ảnh → text: OCR (PaddleOCR) + mô tả ảnh (VLM Vintern), cache JSON
+│       │   ├── image_text.py      # ảnh → text: OCR (PaddleOCR + VietOCR) + mô tả ảnh (VLM Vintern), cache JSON
 │       │   └── augmentation.py    # back-translation, image augmentation nhẹ
 │       │
 │       ├── models/
@@ -104,7 +104,7 @@ IE403/
 | Module | Dùng ở tuần | Mô tả |
 |---|---|---|
 | `data/preprocessing.py`, `data/dataset.py` | Tuần 1-2 | Load raw data, tách từ, chuẩn hóa, resize ảnh, trả về tensor sẵn sàng cho model |
-| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr.json`, `vlm_description.json`; bật bằng `data.image_text` trong config |
+| `data/image_text.py`, `scripts/extract_image_text.py` | Tuần 2 | OCR + mô tả ảnh bằng VLM, chạy 1 lần tạo cache `ocr_v2.json`, `vlm_description_v1.json` (đặt tên theo phiên bản, đổi model/prompt thì tăng số); bật bằng `data.image_text` trong config |
 | `models/text_encoder.py`, `models/image_encoder.py` | Tuần 3 | Wrapper PhoBERT/CLIP dùng độc lập cho baseline |
 | `models/fusion.py`, `models/classifier.py` | Tuần 4-5 | `ConcatFusion` (Tuần 4), `CrossAttentionFusion` (Tuần 5) — cùng interface để dễ swap trong config |
 | `training/losses.py` | Tuần 5 | `FocalLoss`, weighted CrossEntropy cho lớp hiếm `text-sarcasm` |
@@ -178,7 +178,7 @@ def get_github_token():
 
 ON_CLOUD = bool(os.environ.get("KAGGLE_KERNEL_RUN_TYPE")) or "COLAB_RELEASE_TAG" in os.environ
 if ON_CLOUD:
-    if "COLAB_RELEASE_TAG" in os.environ:
+    if "COLAB_RELEASE_TAG" in os.environ and not os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):  # ảnh Kaggle dựng từ ảnh Colab nên cũng có biến này
         from google.colab import drive
         drive.mount("/content/drive")
     token = get_github_token()
@@ -270,7 +270,8 @@ where = ["src"]
 torch
 torchvision
 transformers>=4.45
-underthesea          # tách từ tiếng Việt cho PhoBERT
+py_vncorenlp         # tách từ VnCoreNLP cho PhoBERT (cần Java >= 8)
+underthesea          # tách từ dự phòng (word_segment: underthesea)
 emoji                # xử lý emoji trong caption
 scikit-learn         # metrics
 pyyaml               # đọc config
@@ -278,8 +279,10 @@ pandas
 matplotlib
 pillow
 tqdm
-paddleocr            # OCR ở bước tiền xử lý ảnh
+paddleocr>=3.0       # phát hiện vùng chữ cho OCR ở bước tiền xử lý ảnh
 paddlepaddle         # backend cho paddleocr
+einops               # cần cho vietocr (và Vintern)
+gdown                # cần cho vietocr
 kaggle               # download data qua API (chỉ dùng local)
 pytest
 ```
@@ -289,11 +292,16 @@ CLIP được load qua `transformers` (`CLIPVisionModel`, checkpoint `openai/cli
 `requirements-kaggle.txt` (dùng trong cell bootstrap). Kaggle/Colab đã cài sẵn `torch`, `torchvision`, `transformers`, `scikit-learn`, `pandas`, `matplotlib`, `pyyaml`. **Không cài lại `torch`** vì dễ làm lệch phiên bản CUDA của môi trường:
 
 ```
+py_vncorenlp
 underthesea
 emoji
 ```
 
-`paddleocr` nặng và chỉ cần khi tạo cache ảnh → text (chạy 1 lần) nên không nằm trong file này. `notebooks/01b_image_text_extraction.ipynb` tự cài `paddlepaddle-gpu paddleocr timm einops` (`timm`, `einops` cần cho Vintern). Các notebook train chỉ đọc cache JSON nên không cần cài OCR/VLM.
+Tách từ mặc định dùng VnCoreNLP (công cụ PhoBERT dùng khi pretrain), cần Java. Model tách từ tự tải về `~/.cache/vncorenlp` (đổi bằng biến môi trường `VNCORENLP_DIR`) ở lần chạy đầu.
+
+OCR gồm 2 bước: PaddleOCR phát hiện vùng chữ, VietOCR nhận dạng từng dòng (model nhận dạng của PaddleOCR thiếu các chữ cái mang dấu thanh tiếng Việt). `vietocr` ghim `pillow`/`einops`/`gdown` bản cũ nên không nằm trong `requirements.txt`, cài riêng bằng `pip install --no-deps vietocr`.
+
+`paddleocr` nặng và chỉ cần khi tạo cache ảnh → text (chạy 1 lần) nên không nằm trong file này. `notebooks/01b_image_text_extraction.ipynb` tự cài `paddlepaddle-gpu paddleocr timm einops gdown` và `vietocr` (`timm`, `einops` cần cho Vintern). Các notebook train chỉ đọc cache JSON nên không cần cài OCR/VLM.
 
 Không cần môi trường ảo phức tạp. Kaggle/Colab cài qua cell bootstrap, còn local thì chạy `pip install -r requirements.txt && pip install -e .` một lần. Kiểm tra nhanh (không cần GPU/mạng): `pytest tests`.
 

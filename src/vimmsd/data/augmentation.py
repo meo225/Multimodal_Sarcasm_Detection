@@ -2,13 +2,14 @@ from torchvision import transforms
 
 
 def build_image_augment(enabled: bool):
-    """Augmentation nhẹ trên PIL image, chạy trước image processor của encoder.
-    Không lật ngang vì nhiều ảnh là meme có chữ, lật sẽ làm chữ bị ngược."""
+    """Augmentation nhẹ trên PIL image, chạy sau bước pad vuông và trước image processor của encoder.
+    Chỉ crop 90-100% diện tích để không cắt mất chữ ở mép ảnh (meme thường đặt chữ ở mép trên và dưới),
+    và chỉ chỉnh độ sáng, độ tương phản. Không lật ngang (chữ bị ngược), không xoay hay blur mạnh."""
     if not enabled:
         return None
     return transforms.Compose([
-        transforms.RandomResizedCrop(224, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.RandomResizedCrop(224, scale=(0.9, 1.0), ratio=(0.9, 1.1)),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
     ])
 
 

@@ -27,13 +27,15 @@ data:
   labels: [not-sarcasm, text-sarcasm, image-sarcasm, multi-sarcasm]
   val_ratio: 0.1     # val/test chia stratified từ tập train có nhãn
   test_ratio: 0.1
-  max_length: 128
+  max_length: 256           # giới hạn của PhoBERT; p95 độ dài caption sau làm sạch ≈ 251 token
+  max_caption_length: 200   # khi có text từ ảnh: caption cắt trước còn tối đa 200 token, phần còn lại cho segment 2
   text:
     lowercase: false
     normalize_teencode: true
-    emoji: demojize   # keep | remove | demojize
-    word_segment: true
-  image_augment: false
+    emoji: demojize   # keep | remove | demojize (emoji phổ biến sang tiếng Việt, còn lại tên tiếng Anh)
+    word_segment: vncorenlp   # vncorenlp (PhoBERT, cần Java) | underthesea | none (ViSoBERT)
+  image_resize: pad    # pad (letterbox vuông, giữ toàn bộ ảnh) | crop (center-crop của processor, như code cũ)
+  image_augment: false # crop 90-100% + chỉnh sáng/tương phản, chỉ khi train
   sampler: random     # random | weighted (oversampling lớp hiếm)
   # Tiền xử lý ảnh thành text (tạo trước bằng scripts/extract_image_text.py, xem notebooks/01b):
   # chữ trong ảnh (OCR) + mô tả ảnh (VLM), ghép thành segment thứ 2 của PhoBERT cạnh caption.
@@ -41,8 +43,9 @@ data:
     use_ocr: false
     use_description: false
     dir: null                           # null = paths.cache_dir; Kaggle: thư mục output notebook 01b đã attach
-    ocr_cache: ocr.json
-    description_cache: vlm_description.json
+    # đặt tên theo phiên bản: đổi model/prompt thì tăng số, không ghi đè cache cũ
+    ocr_cache: ocr_v2.json                     # PaddleOCR phát hiện + VietOCR vgg_seq2seq, mỗi dòng một hàng
+    description_cache: vlm_description_v1.json # Vintern-1B, prompt mô tả trung tính
 
 model:
   modality: concat    # text | image | concat | cross_attn

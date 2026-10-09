@@ -1,6 +1,9 @@
 # data & checkpoint không commit (xem CODEBASE.md mục 5)
 data/raw/*
 data/processed/*
+data/processed_v1/*
+data/processed_v2/*
+notebooks/logs/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 outputs/
@@ -25,3 +28,10 @@ kaggle.json
 
 # docs
 docs/
+
+# other
+reports/dataset_report.html
+reports/environment_setup.md
+reports/environment_setup.pdf
+scripts/md_to_pdf.py
+cache_file/
