@@ -8,7 +8,7 @@ paths:
     output_dir: outputs
     cache_dir: data/processed
   kaggle:
-    data_dir: /kaggle/input/datasets/hhhoang/vimmsd-dataset   # đã xác nhận bằng notebooks/00_dataset_check.ipynb
+    data_dir: /kaggle/input/datasets/phuclkz/vimmsd-private-dataset   # đã xác nhận bằng notebooks/00_dataset_check.ipynb
     output_dir: /kaggle/working/outputs
     cache_dir: /kaggle/working/cache
   colab:
