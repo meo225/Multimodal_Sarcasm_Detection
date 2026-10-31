@@ -20,10 +20,17 @@ logger = logging.getLogger(__name__)
 IGNORE_LABEL = -1  # mẫu không có nhãn (public test)
 
 
-def load_records(json_path, image_dir, label2id, image_texts=None):
+def load_ref_labels(path):
+    """Đọc file nhãn của BTC: {"results": {id: label}}."""
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {str(k): v for k, v in raw["results"].items()}
+
+
+def load_records(json_path, image_dir, label2id, image_texts=None, ref_labels=None):
     """Đọc file annotation ViMMSD: {id: {"image", "caption", "label"}} (hoặc list các dict).
     Trả về list dict thống nhất: id, image_path, caption, label (int, -1 nếu không có nhãn).
-    image_texts: {"ocr": cache, "description": cache} tạo bởi scripts/extract_image_text.py."""
+    image_texts: {"ocr": cache, "description": cache} tạo bởi scripts/extract_image_text.py.
+    ref_labels: {id: label} điền nhãn cho mẫu không có label trong file annotation."""
     with open(json_path, encoding="utf-8") as f:
         raw = json.load(f)
     items = raw.items() if isinstance(raw, dict) else ((str(i), r) for i, r in enumerate(raw))
@@ -32,6 +39,8 @@ def load_records(json_path, image_dir, label2id, image_texts=None):
     records, missing = [], Counter()
     for sid, r in items:
         label = r.get("label")
+        if label is None and ref_labels is not None:
+            label = ref_labels.get(str(sid))
         rec = {
             "id": str(sid),
             "image_path": str(Path(image_dir) / r["image"]),
@@ -342,13 +351,27 @@ def separates_image_text(cfg):
 
 
 def load_all_records(cfg):
-    """Trả về dict split -> records: train/val/test (chia từ tập có nhãn) và public_test (không nhãn)."""
+    """Trả về dict split -> records.
+    split_mode competition: train = toàn bộ train, val = public test, test = private test (nhãn từ file ref).
+    split_mode random: train/val/test chia từ tập train có nhãn, public_test không nhãn."""
     data_dir = Path(cfg.paths.data_dir)
     label2id = {l: i for i, l in enumerate(cfg.data.labels)}
     image_texts = load_image_texts(cfg)
 
     labeled = load_records(data_dir / cfg.data.train_json, data_dir / cfg.data.train_image_dir,
                            label2id, image_texts)
+    if cfg.data.get("split_mode", "random") == "competition":
+        splits = {"train": labeled}
+        for split, prefix in (("val", "public_test"), ("test", "private_test")):
+            ref = load_ref_labels(data_dir / cfg.data[f"{prefix}_ref"])
+            splits[split] = load_records(data_dir / cfg.data[f"{prefix}_json"],
+                                         data_dir / cfg.data[f"{prefix}_image_dir"],
+                                         label2id, image_texts, ref_labels=ref)
+            unlabeled = sum(r["label"] == IGNORE_LABEL for r in splits[split])
+            if unlabeled:
+                raise ValueError(f"{prefix}: {unlabeled}/{len(splits[split])} mẫu không có nhãn trong file ref")
+        return splits
+
     train, val, test = split_records(labeled, cfg.data.val_ratio, cfg.data.test_ratio, cfg.seed)
     splits = {"train": train, "val": val, "test": test}
 

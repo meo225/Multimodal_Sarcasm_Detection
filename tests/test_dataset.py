@@ -227,6 +227,58 @@ def test_load_and_split(fake_data):
     assert not {r["id"] for r in train} & {r["id"] for r in test}
 
 
+def _write_test_split(root, name, n, offset):
+    ann = {str(i): {"image": f"{i}.jpg", "caption": f"mẫu {name} {i}", "label": None} for i in range(n)}
+    for i in range(n):
+        Image.new("RGB", (32, 32)).save(root / "images" / f"{i}.jpg")
+    (root / f"{name}.json").write_text(json.dumps(ann, ensure_ascii=False), encoding="utf-8")
+    ref = {"results": {str(i): LABELS[(i + offset) % 4] for i in range(n)}}
+    (root / f"{name}-ref.json").write_text(json.dumps(ref), encoding="utf-8")
+
+
+def _split_cfg(root, *extra):
+    from vimmsd.data.dataset import load_all_records
+
+    cfg = load_config("configs/base.yaml", overrides=[
+        f"paths.local.data_dir={root}",
+        "data.train_json=train.json", "data.train_image_dir=images",
+        "data.public_test_json=public.json", "data.public_test_ref=public-ref.json",
+        "data.public_test_image_dir=images",
+        "data.private_test_json=private.json", "data.private_test_ref=private-ref.json",
+        "data.private_test_image_dir=images",
+        *extra,
+    ], env="local")
+    return load_all_records(cfg)
+
+
+def test_competition_split_uses_ref_labels(fake_data):
+    _write_test_split(fake_data, "public", 8, 0)
+    _write_test_split(fake_data, "private", 12, 1)
+    splits = _split_cfg(fake_data, "data.split_mode=competition")
+    assert [len(splits[k]) for k in ("train", "val", "test")] == [40, 8, 12]
+    assert [r["label"] for r in splits["val"]] == [i % 4 for i in range(8)]
+    assert [r["label"] for r in splits["test"]] == [(i + 1) % 4 for i in range(12)]
+    assert "public_test" not in splits
+
+
+def test_competition_split_rejects_missing_ref_label(fake_data):
+    _write_test_split(fake_data, "public", 8, 0)
+    _write_test_split(fake_data, "private", 12, 1)
+    ref = json.loads((fake_data / "private-ref.json").read_text())
+    del ref["results"]["3"]
+    (fake_data / "private-ref.json").write_text(json.dumps(ref), encoding="utf-8")
+    with pytest.raises(ValueError, match="private_test"):
+        _split_cfg(fake_data, "data.split_mode=competition")
+
+
+def test_random_split_keeps_public_test_unlabeled(fake_data):
+    _write_test_split(fake_data, "public", 8, 0)
+    _write_test_split(fake_data, "private", 12, 1)
+    splits = _split_cfg(fake_data, "data.split_mode=random")
+    assert len(splits["train"]) + len(splits["val"]) + len(splits["test"]) == 40
+    assert {r["label"] for r in splits["public_test"]} == {-1}
+
+
 def test_from_config_ignores_cache_dir():
     cfg = load_config("configs/base.yaml")
     pre = TextPreprocessor.from_config(cfg.data.text)

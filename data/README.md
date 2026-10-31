@@ -34,4 +34,4 @@ Upload dữ liệu lên Google Drive tại `MyDrive/IE403/data/raw/` (xem `paths
 
 ## Chia tập
 
-ViMMSD public test không có nhãn, nên train/val/test được chia **stratified** từ `vimmsd-train.json` (mặc định 80/10/10, seed trong config). Public test chỉ dùng để xuất file dự đoán: `python scripts/evaluate.py --config ... --split public_test`.
+Mặc định (`data.split_mode: competition`): train = toàn bộ `vimmsd-train.json`, val = public test, test = private test, nhãn lấy từ `vimmsd-public-test-ref.json` và `vimmsd-private-test-ref.json`. Đặt `data.split_mode=random` để chia stratified 80/10/10 từ `vimmsd-train.json`; khi đó public test không có nhãn và chỉ dùng để xuất file dự đoán: `python scripts/evaluate.py --config ... --split public_test`.
