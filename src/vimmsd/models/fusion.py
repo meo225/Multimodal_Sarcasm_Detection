@@ -184,25 +184,38 @@ class CrossAttentionBlock(nn.Module):
 
 
 class CrossAttentionFusion(nn.Module):
-    """Cross-attention 2 chiều: token text attend lên patch ảnh và ngược lại.
+    """Cross-attention giữa token text và patch ảnh, chọn chiều bằng `direction`:
 
-    Vector đầu ra = [t; i; t*i; |t-i|] với t, i là biểu diễn đã pool của mỗi modality.
-    Hai thành phần t*i và |t-i| biểu diễn trực tiếp mức độ khớp/lệch giữa ảnh và text,
-    là tín hiệu quan trọng cho sarcasm dạng mâu thuẫn giữa 2 modality.
+    - text_to_image: token text là query, attend lên patch ảnh (ảnh chỉ qua phép chiếu).
+    - image_to_text: patch ảnh là query, attend lên token text (text chỉ qua phép chiếu).
+    - both (mặc định): chạy cả hai chiều trong cùng một lượt.
 
-    Attention weight của layer cuối lưu ở `self.last_attn` để vẽ attention map (Tuần 6).
+    Vector đầu ra = [t; i; t*i; |t-i|] với t, i là biểu diễn đã pool của mỗi modality, nên out_dim
+    như nhau ở cả ba chế độ và các chế độ so sánh được với nhau. Hai thành phần t*i và |t-i| biểu
+    diễn trực tiếp mức độ khớp/lệch giữa ảnh và text, là tín hiệu quan trọng cho sarcasm dạng
+    mâu thuẫn giữa 2 modality.
+
+    Attention weight của layer cuối lưu ở `self.last_attn` để vẽ attention map (Tuần 6); chiều không
+    chạy thì giá trị tương ứng là None.
     """
 
-    def __init__(self, text_dim, image_dim, hidden_dim=512, num_heads=8, num_layers=1, dropout=0.1, **_):
+    DIRECTIONS = ("both", "text_to_image", "image_to_text")
+
+    def __init__(self, text_dim, image_dim, hidden_dim=512, num_heads=8, num_layers=1, dropout=0.1,
+                 direction="both", **_):
         super().__init__()
+        if direction not in self.DIRECTIONS:
+            raise ValueError(f"direction không hợp lệ: {direction!r}, chọn một trong {self.DIRECTIONS}")
+        self.direction = direction
         self.text_proj = nn.Linear(text_dim, hidden_dim)
         self.image_proj = nn.Linear(image_dim, hidden_dim)
-        self.text_blocks = nn.ModuleList(
-            [CrossAttentionBlock(hidden_dim, num_heads, dropout) for _ in range(num_layers)]
-        )
-        self.image_blocks = nn.ModuleList(
-            [CrossAttentionBlock(hidden_dim, num_heads, dropout) for _ in range(num_layers)]
-        )
+
+        def blocks(active):
+            n = num_layers if active else 0
+            return nn.ModuleList([CrossAttentionBlock(hidden_dim, num_heads, dropout) for _ in range(n)])
+
+        self.text_blocks = blocks(direction in ("both", "text_to_image"))
+        self.image_blocks = blocks(direction in ("both", "image_to_text"))
         self.out_dim = hidden_dim * 4
         self.last_attn = None
 
@@ -211,11 +224,18 @@ class CrossAttentionFusion(nn.Module):
         i = self.image_proj(image["tokens"])
         text_mask = text["mask"]
 
-        for t_block, i_block in zip(self.text_blocks, self.image_blocks):
-            t_new, t2i = t_block(t, i)
-            i_new, i2t = i_block(i, t, context_pad_mask=~text_mask)
+        t2i = i2t = None
+        for layer in range(max(len(self.text_blocks), len(self.image_blocks))):
+            t_new, i_new = t, i
+            if self.text_blocks:
+                t_new, t2i = self.text_blocks[layer](t, i)
+            if self.image_blocks:
+                i_new, i2t = self.image_blocks[layer](i, t, context_pad_mask=~text_mask)
             t, i = t_new, i_new
-        self.last_attn = {"text_to_image": t2i.detach(), "image_to_text": i2t.detach()}
+        self.last_attn = {
+            "text_to_image": None if t2i is None else t2i.detach(),
+            "image_to_text": None if i2t is None else i2t.detach(),
+        }
 
         m = text_mask.unsqueeze(-1).to(t.dtype)
         t_pooled = (t * m).sum(1) / m.sum(1).clamp(min=1.0)

@@ -5,3 +5,4 @@ model:
     hidden_dim: 512
     num_heads: 8
     num_layers: 1
+    direction: both   # both | text_to_image | image_to_text

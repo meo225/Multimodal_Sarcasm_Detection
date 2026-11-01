@@ -1,0 +1,4 @@
+inherit: fusion_cross_attn.yaml
+model:
+  fusion:
+    direction: image_to_text

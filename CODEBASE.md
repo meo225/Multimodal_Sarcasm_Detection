@@ -47,7 +47,9 @@ IE403/
 │   ├── fusion_multistream_clip_frozen.yaml # Tuần 4: như trên + vector CLIP
 │   ├── fusion_multistream_ocr_frozen.yaml # Tuần 4: ablation, caption + OCR
 │   ├── fusion_multistream_desc_frozen.yaml # Tuần 4: ablation, caption + mô tả VLM
-│   ├── fusion_cross_attn.yaml # Tuần 5
+│   ├── fusion_cross_attn.yaml # Tuần 5 (direction: both)
+│   ├── fusion_cross_attn_t2i.yaml # Tuần 5: text attend vào ảnh
+│   ├── fusion_cross_attn_i2t.yaml # Tuần 5: ảnh attend vào text
 │   ├── fusion_cross_attn_focal.yaml # Tuần 5 (+ xử lý imbalance)
 │   ├── distill_base.yaml           # backbone chung cho CoT distillation (multistream_clip đóng băng)
 │   ├── distill_flat_{a,b,c,d}.yaml # M1 (= d) và các cột ablation, xem docs/cot_distillation.md mục 6.2; *_d_nogroup3 bỏ nhóm 3
