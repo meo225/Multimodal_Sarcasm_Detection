@@ -19,18 +19,22 @@ def cross_attention_maps(model, batch):
     """Lấy attention của layer cross-attention cuối.
 
     - image_heatmap: trung bình attention của các token text (không tính padding) lên từng patch ảnh.
-    - token_scores: trung bình attention của các patch ảnh lên từng token text."""
+    - token_scores: trung bình attention của các patch ảnh lên từng token text.
+    Nếu fusion chỉ chạy một chiều (direction), phần của chiều còn lại là None."""
     if not isinstance(model.fusion, CrossAttentionFusion):
         raise TypeError("attention map chỉ có với model.modality = cross_attn")
     model.eval()
     logits = model(batch)
     attn = model.fusion.last_attn
-    mask = batch["attention_mask"].to(attn["text_to_image"].dtype)
+    mask = batch["attention_mask"].to(logits.dtype)
 
-    t2i = (attn["text_to_image"] * mask.unsqueeze(-1)).sum(1) / mask.sum(1, keepdim=True)
-    image_heatmap = _grid(t2i[:, 1:])  # bỏ token CLS của ảnh
-    token_scores = attn["image_to_text"].mean(1) * mask
-    return {"logits": logits, "image_heatmap": image_heatmap.cpu(), "token_scores": token_scores.cpu()}
+    image_heatmap = token_scores = None  # None nếu fusion không chạy chiều attention tương ứng
+    if attn["text_to_image"] is not None:
+        t2i = (attn["text_to_image"] * mask.unsqueeze(-1)).sum(1) / mask.sum(1, keepdim=True)
+        image_heatmap = _grid(t2i[:, 1:]).cpu()  # bỏ token CLS của ảnh
+    if attn["image_to_text"] is not None:
+        token_scores = (attn["image_to_text"].mean(1) * mask).cpu()
+    return {"logits": logits, "image_heatmap": image_heatmap, "token_scores": token_scores}
 
 
 def _last_vision_layer(image_encoder):
