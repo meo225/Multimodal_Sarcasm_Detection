@@ -1,0 +1,5 @@
+# Phase 5: như fusion_cross_attn_frozen, chỉ chạy chiều ảnh attend vào text.
+inherit: fusion_cross_attn_frozen.yaml
+model:
+  fusion:
+    direction: image_to_text
